@@ -1,0 +1,13 @@
+# Temporary files generated during local testing/runs
+pr_diff.txt
+review_report.md
+
+# OS metadata files
+.DS_Store
+Thumbs.db
+
+# Logs and environment files
+*.log
+.env
+.env.*
+.tmp/

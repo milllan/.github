@@ -1,0 +1,111 @@
+name: Antigravity Code Reviewer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  # Allows this workflow to be called as a reusable workflow from other repos
+  workflow_call:
+    secrets:
+      AGY_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Auto-Review Pull Request
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for accurate diffing
+
+      - name: Detect Languages
+        id: detect-languages
+        run: |
+          # Node.js
+          if [ -f "package.json" ] || [ -f "package-lock.json" ]; then
+            echo "has_node=true" >> $GITHUB_OUTPUT
+            echo "Detected Node.js project."
+          fi
+          # Python
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+            echo "has_python=true" >> $GITHUB_OUTPUT
+            echo "Detected Python project."
+          fi
+          # Go
+          if [ -f "go.mod" ]; then
+            echo "has_go=true" >> $GITHUB_OUTPUT
+            echo "Detected Go project."
+          fi
+          # Rust
+          if [ -f "Cargo.toml" ]; then
+            echo "has_rust=true" >> $GITHUB_OUTPUT
+            echo "Detected Rust project."
+          fi
+
+      - name: Setup Node.js
+        if: steps.detect-languages.outputs.has_node == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        if: steps.detect-languages.outputs.has_python == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Go
+        if: steps.detect-languages.outputs.has_go == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Setup Rust
+        if: steps.detect-languages.outputs.has_rust == 'true'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install Google Antigravity CLI
+        run: |
+          curl -fsSL https://antigravity.google/cli/install.sh | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Generate PR Diff
+        id: pr-diff
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
+          if [ ! -s pr_diff.txt ]; then
+            echo "No changes detected or diff is empty."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Antigravity Reviewer
+        if: steps.pr-diff.outputs.skip != 'true'
+        env:
+          AGY_API_KEY: ${{ secrets.AGY_API_KEY }}
+        run: |
+          # Use --dangerously-skip-permissions to bypass non-interactive prompts.
+          # Pipe the PR diff directly to agy for cost control and token-efficiency.
+          agy --dangerously-skip-permissions --print "You are an expert software engineer and code reviewer.
+          Review the following git diff for bugs, safety/security hazards, performance issues, logic flaws, and coding standard violations.
+          Provide concrete, actionable code snippets in your feedback if improvements are suggested.
+          Format your response in clean GitHub Markdown, including a summary of changes, critical findings (if any), and minor/style suggestions.
+          
+          Git Diff:
+          $(cat pr_diff.txt)" > review_report.md
+
+      - name: Post Review Comment
+        if: steps.pr-diff.outputs.skip != 'true' && hashFiles('review_report.md') != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -s review_report.md ]; then
+            gh pr comment ${{ github.event.pull_request.number }} --body-file review_report.md
+          else
+            echo "Review report is empty, skipping comment."
+          fi
