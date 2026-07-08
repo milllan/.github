@@ -7,7 +7,7 @@ This repository contains the global, reusable GitHub Actions workflow for the **
 ## 🚀 Reusable Workflow (`agy-reviewer.yml`)
 
 The central workflow is located at:
-`Google/Antigravity-Reviewer/.github/workflows/agy-reviewer.yml` (relative to your organization/user setup).
+`milllan/.github/.github/workflows/agy-reviewer.yml` (relative to your organization/user setup).
 
 ### Key Features
 - **Auto-Language Detection**: Detects Node.js, Python, Go, and Rust, setting up their respective runtimes automatically.
@@ -35,7 +35,7 @@ permissions:
 jobs:
   run-reviewer:
     # Reference the reusable workflow in this repository
-    uses: <YOUR_GITHUB_ORG_OR_USER>/.github/.github/workflows/agy-reviewer.yml@main
+    uses: milllan/.github/.github/workflows/agy-reviewer.yml@main
     secrets:
       AGY_API_KEY: ${{ secrets.AGY_API_KEY }}
 ```
