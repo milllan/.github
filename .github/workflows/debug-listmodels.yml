@@ -1,0 +1,13 @@
+name: Debug List Models
+on:
+  workflow_dispatch:
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List available Gemini models
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          curl -sS "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200?key=${GEMINI_API_KEY}" \
+            | jq -r '.models[] | "\(.name) | supports: \(.supportedGenerationMethods|join(","))"' | grep -iE "flash|pro|3\." | head -30
