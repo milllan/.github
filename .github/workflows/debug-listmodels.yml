@@ -9,5 +9,9 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          curl -sS "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200?key=${GEMINI_API_KEY}" \
-            | jq -r '.models[] | "\(.name) | supports: \(.supportedGenerationMethods|join(","))"' | grep -iE "flash|pro|3\." | head -30
+          set +e
+          curl -sS "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${GEMINI_API_KEY}" > models.json
+          echo "--- models matching flash/pro/3.x with generateContent support ---"
+          jq -r '.models[] | select(.supportedGenerationMethods | index("generateContent")) | .name' models.json | grep -iE "flash|pro|gemini-[23]" | head -40
+          echo "--- total count ---"
+          jq '.models | length' models.json
