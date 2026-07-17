@@ -1,59 +1,78 @@
-# Google Antigravity Code Reviewer (.github)
+# Gemini Code Reviewer (.github)
 
-This repository contains the global, reusable GitHub Actions workflow for the **Google Antigravity CLI (`agy`) reviewer**. It automates pull request reviews by running static analysis, detecting bugs, security issues, performance flaws, and style violations, then posting feedback directly as PR comments.
+This repository hosts a **reusable GitHub Actions workflow** that runs AI-powered code review on pull requests using the **Google Gemini API**. It posts the review directly as a PR comment.
+
+It is designed to be referenced from any other repository in your account — add a small caller workflow there and every PR gets reviewed automatically.
 
 ---
 
-## 🚀 Reusable Workflow (`agy-reviewer.yml`)
+## 🚀 Reusable Workflow (`gemini-reviewer.yml`)
 
-The central workflow is located at:
-`milllan/.github/.github/workflows/agy-reviewer.yml` (relative to your organization/user setup).
+Located at `milllan/.github/.github/workflows/gemini-reviewer.yml`.
 
 ### Key Features
-- **Auto-Language Detection**: Detects Node.js, Python, Go, and Rust, setting up their respective runtimes automatically.
-- **Smart Git Diff**: Generates precise diffs comparing the PR branch against the target base branch.
-- **Cost & Token Optimized**: Pipes only the actual code diff to the AI engine for efficient token consumption.
-- **PR Comments**: Posts feedback directly to the PR using GitHub CLI.
+- **Diff-driven**: pipes only the PR's actual `git diff` to Gemini, keeping token usage and cost low.
+- **API-key auth**: a single `GEMINI_API_KEY` secret. No browser OAuth, no service account — works in headless CI.
+- **Safe prompt assembly**: the request JSON is built with `jq --rawfile`, so diff contents containing quotes, backticks, or `$` cannot break parsing.
+- **Cost guard**: skips review when the diff exceeds a configurable size (`max_diff_chars`, default 60000).
+- **Language detection**: detects Node.js / Python / Go / Rust and sets up the matching runtime (retained for future tooling).
+- **PR comments**: posts the review via the GitHub CLI (`gh`).
+
+> [!NOTE]
+> GitHub does **not** auto-inherit a workflow across all your repos. This is a *reusable* workflow — each repo that wants reviews adds the small caller shown below. There is no silent account-wide trigger.
 
 ---
 
 ## 🛠️ Usage in Other Repositories
 
-To use this reviewer in other repositories in your GitHub organization, create a workflow file (e.g., `.github/workflows/review.yml`) in the target repository with the following minimal setup:
+1. **Get a Gemini API key** at https://aistudio.google.com/apikey.
+
+2. **Add it as a repository secret** named `GEMINI_API_KEY`:
+   **Settings → Secrets and variables → Actions → New repository secret**.
+
+3. **Add a caller workflow** (e.g. `.github/workflows/gemini-review.yml`) in the target repository:
+
+   ```yaml
+   name: Gemini Code Review
+
+   on:
+     pull_request:
+       types: [opened, synchronize, reopened]
+
+   permissions:
+     contents: read
+     pull-requests: write
+
+   jobs:
+     review:
+       uses: milllan/.github/.github/workflows/gemini-reviewer.yml@main
+       secrets:
+         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+   ```
+
+### Optional inputs
+| Input | Default | Description |
+|-------|---------|-------------|
+| `model` | `gemini-3.5-flash` | Gemini model name (e.g. `gemini-3.1-pro` for deeper reasoning). |
+| `max_diff_chars` | `60000` | Skip the review if the raw diff is larger (cost guard). `0` disables the limit. |
+
+Example with a different model:
 
 ```yaml
-name: Code Review
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  run-reviewer:
-    # Reference the reusable workflow in this repository
-    uses: milllan/.github/.github/workflows/agy-reviewer.yml@main
+    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@main
+    with:
+      model: gemini-3.1-pro
     secrets:
-      AGY_API_KEY: ${{ secrets.AGY_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```
-
-> [!IMPORTANT]
-> Replace `<YOUR_GITHUB_ORG_OR_USER>` with the name of your GitHub organization or user account where the `.github` repository resides.
 
 ---
 
 ## 🔑 Setup & Configuration
 
-1. **Get an Antigravity API Key**: Ensure you have a valid API key for Google Antigravity.
-2. **Add Repository Secrets**:
-   - Go to your repository **Settings** -> **Secrets and variables** -> **Actions**.
-   - Create a new repository secret:
-     - **Name**: `AGY_API_KEY`
-     - **Value**: *Your Google Antigravity API Key*
-3. **Permissions**: The calling workflow requires `pull-requests: write` permissions to allow posting comments.
+1. **Gemini API key**: create one at https://aistudio.google.com/apikey.
+2. **Repository secret**: add `GEMINI_API_KEY` to the *calling* repository (the one with PRs), not this `.github` repo.
+3. **Permissions**: the caller workflow must grant `pull-requests: write` so the action can post comments.
 
 ---
 
