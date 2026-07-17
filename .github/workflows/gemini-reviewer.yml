@@ -114,14 +114,36 @@ jobs:
           }' > body.json
 
           # Non-streaming generateContent; the key is passed as a query param.
-          http_code=$(curl -sS -w "%{http_code}" -o response.json \
-            -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}" \
-            -H 'Content-Type: application/json' \
-            -d @body.json)
+          # Retry transient Google-side errors (502/503/504 overload, 429 rate
+          # limit) with exponential backoff so a temporary spike doesn't waste
+          # a review. Non-transient errors (4xx) fail immediately.
+          max_attempts=4
+          attempt=1
+          http_code=""
+          while [ "$attempt" -le "$max_attempts" ]; do
+            http_code=$(curl -sS -w "%{http_code}" -o response.json \
+              -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}" \
+              -H 'Content-Type: application/json' \
+              -d @body.json)
+            if [ "$http_code" = "200" ]; then
+              break
+            fi
+            case "$http_code" in
+              429|502|503|504)
+                wait_s=$((10 * attempt))
+                echo "HTTP $http_code on attempt $attempt/$max_attempts — retrying in ${wait_s}s..."
+                sleep "$wait_s"
+                attempt=$((attempt + 1))
+                ;;
+              *)
+                break
+                ;;
+            esac
+          done
 
           if [ "$http_code" != "200" ]; then
             msg=$(jq -r '.error.message // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
-            printf '## Gemini Code Review\n\n:warning: Gemini API returned HTTP %s: %s\n' "$http_code" "$msg" > review_report.md
+            printf '## Gemini Code Review\n\n:warning: Gemini API returned HTTP %s after %s attempt(s): %s\n' "$http_code" "$attempt" "$msg" > review_report.md
             echo "status=error" >> $GITHUB_OUTPUT
             exit 0
           fi
