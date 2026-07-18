@@ -1,20 +1,25 @@
 name: Gemini Code Reviewer
 
 # Reusable workflow: other repos reference it via
-#   uses: milllan/.github/.github/workflows/gemini-reviewer.yml@main
-# A workflow_call-only trigger means this file does NOT run on pull requests
-# against the .github repo itself (which has no code to review).
+#   uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<sha>
+# Callers pass pr_number when triggering manually (their own workflow_dispatch
+# forwards it here). On a normal pull_request trigger the caller leaves
+# pr_number empty and the workflow reads it from the event payload.
 on:
   workflow_call:
     inputs:
+      pr_number:
+        description: "PR number to review. Set when triggering manually; auto-detected from the pull_request event when empty."
+        type: number
+        default: 0
       model:
-        description: "Gemini model used for the review (e.g. gemini-3.5-flash or gemini-3.1-pro)."
+        description: "Gemini model used for the review (e.g. gemini-3.5-flash)."
         type: string
         default: "gemini-3.5-flash"
       max_diff_chars:
-        description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit."
+        description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit. gemini-3.5-flash has a 1M-token context window, so large values are safe."
         type: number
-        default: 60000
+        default: 250000
     secrets:
       GEMINI_API_KEY:
         required: true
@@ -29,10 +34,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Resolve PR context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_PR: ${{ inputs.pr_number }}
+          PR_PR: ${{ github.event.pull_request.number }}
+        run: |
+          # Two modes:
+          #  - Normal pull_request trigger: pr_number input is 0/empty, read
+          #    refs from the event payload.
+          #  - Manual re-review: caller forwards pr_number via workflow_call
+          #    input; resolve refs via the GitHub API.
+          if [ -n "$INPUT_PR" ] && [ "$INPUT_PR" != "0" ]; then
+            pr_number="$INPUT_PR"
+            echo "Manual re-review of PR #$pr_number — resolving refs via API..."
+            pr_json=$(gh pr view "$pr_number" --json baseRefName,headRefName,headRepository,headRepositoryOwner)
+            base_ref=$(echo "$pr_json" | jq -r '.baseRefName')
+            head_ref=$(echo "$pr_json" | jq -r '.headRefName')
+            head_owner=$(echo "$pr_json" | jq -r '.headRepositoryOwner.login')
+            head_repo=$(echo "$pr_json" | jq -r '.headRepository.name')
+            echo "pr_number=$pr_number" >> $GITHUB_OUTPUT
+            echo "base_ref=$base_ref" >> $GITHUB_OUTPUT
+            echo "head_ref=$head_ref" >> $GITHUB_OUTPUT
+            echo "head_repo=$head_owner/$head_repo" >> $GITHUB_OUTPUT
+          else
+            echo "pr_number=$PR_PR" >> $GITHUB_OUTPUT
+            echo "base_ref=${{ github.base_ref }}" >> $GITHUB_OUTPUT
+            echo "head_ref=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+            echo "head_repo=${{ github.repository }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Full history so the base ref is available for an accurate diff.
+          # On manual re-review the event ref isn't the PR branch, so check out
+          # the resolved head ref explicitly.
+          ref: ${{ steps.ctx.outputs.head_ref }}
 
       # Language detection is retained so later steps (or future tools) can
       # install runtimes. Gemini itself does not need them to review a diff.
@@ -77,24 +116,25 @@ jobs:
       - name: Generate PR Diff
         id: pr-diff
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ steps.ctx.outputs.base_ref }}
+          MAX_DIFF_CHARS: ${{ inputs.max_diff_chars }}
         run: |
           # Ensure the base ref exists locally (shallow/PR checkouts can miss it).
           git fetch origin "${BASE_REF}" --depth=1 2>/dev/null || true
           git diff "origin/${BASE_REF}...HEAD" > pr_diff.txt
-          if [ ! -s pr_diff.txt ]; then
+          size=$(wc -c < pr_diff.txt)
+          if [ "$size" -eq 0 ]; then
             echo "Empty diff — nothing to review."
             echo "skip=true" >> $GITHUB_OUTPUT
+            echo "skip_reason=Empty diff — nothing to review." >> $GITHUB_OUTPUT
             exit 0
           fi
           # Cost guard: bail on enormous diffs rather than burning the model.
-          if [ "${{ inputs.max_diff_chars }}" != "0" ]; then
-            size=$(wc -c < pr_diff.txt)
-            if [ "$size" -gt "${{ inputs.max_diff_chars }}" ]; then
-              echo "Diff is ${size} bytes (limit ${{ inputs.max_diff_chars }}) — skipping review to control cost."
-              echo "skip=true" >> $GITHUB_OUTPUT
-              exit 0
-            fi
+          if [ "${MAX_DIFF_CHARS}" != "0" ] && [ "$size" -gt "${MAX_DIFF_CHARS}" ]; then
+            echo "Diff is ${size} bytes (limit ${MAX_DIFF_CHARS}) — skipping review to control cost."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "skip_reason=Diff is $(printf "%'d" "$size") bytes, which exceeds the $(printf "%'d" "${MAX_DIFF_CHARS}") char cost guard. Raise \`max_diff_chars\` or split the PR to get this reviewed." >> $GITHUB_OUTPUT
+            exit 0
           fi
 
       - name: Run Gemini Review
@@ -160,11 +200,18 @@ jobs:
           { printf '## Gemini Code Review\n\n'; printf '%s\n' "$review"; } > review_report.md
           echo "status=ok" >> $GITHUB_OUTPUT
 
+      - name: Build skip comment
+        if: steps.pr-diff.outputs.skip == 'true'
+        env:
+          SKIP_REASON: ${{ steps.pr-diff.outputs.skip_reason }}
+        run: |
+          { printf '## Gemini Code Review\n\n:information_source: %s\n' "$SKIP_REASON"; } > review_report.md
+
       - name: Post Review Comment
-        if: steps.pr-diff.outputs.skip != 'true' && hashFiles('review_report.md') != ''
+        if: always() && hashFiles('review_report.md') != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
         run: |
           if [ -s review_report.md ]; then
             gh pr comment "${PR_NUMBER}" --body-file review_report.md
