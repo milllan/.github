@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Skipped reviews now post a comment** explaining the skip reason (empty diff, or oversized diff with the byte count and limit) instead of posting nothing. Previously you couldn't tell a skipped review from a broken one without checking the Actions tab.
 
 ### Added
-- **Manual re-review via `pr_number` input.** Caller workflows can add a `workflow_dispatch` trigger that forwards `pr_number`; the reusable workflow resolves the PR's refs via the API and re-runs the review. Useful for forcing a review after fixing review-tool issues or to bypass a one-off skip.
+- **Manual re-review support.** Caller workflows can add a `workflow_dispatch` job that pushes an empty commit to a PR's branch (given a `pr_number` input), re-firing the `pull_request: synchronize` trigger. The reusable workflow itself stays `workflow_call`-only — GitHub Actions does not allow a `workflow_dispatch` event to invoke a reusable-workflow caller job directly, so the trigger lives in each caller.
 
 ### Fixed
 - Diff-step env now reads `BASE_REF` from the resolved context step instead of `github.base_ref` (which is empty on manual triggers).
