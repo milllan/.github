@@ -2,16 +2,12 @@ name: Gemini Code Reviewer
 
 # Reusable workflow: other repos reference it via
 #   uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<sha>
-# Callers pass pr_number when triggering manually (their own workflow_dispatch
-# forwards it here). On a normal pull_request trigger the caller leaves
-# pr_number empty and the workflow reads it from the event payload.
+# Triggered by a caller workflow on pull_request events. For manual re-review,
+# the caller's workflow_dispatch job pushes an empty commit to the PR branch,
+# which re-fires the pull_request:synchronize trigger that calls this workflow.
 on:
   workflow_call:
     inputs:
-      pr_number:
-        description: "PR number to review. Set when triggering manually; auto-detected from the pull_request event when empty."
-        type: number
-        default: 0
       model:
         description: "Gemini model used for the review (e.g. gemini-3.5-flash)."
         type: string
@@ -34,44 +30,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Resolve PR context
-        id: ctx
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_PR: ${{ inputs.pr_number }}
-          PR_PR: ${{ github.event.pull_request.number }}
-        run: |
-          # Two modes:
-          #  - Normal pull_request trigger: pr_number input is 0/empty, read
-          #    refs from the event payload.
-          #  - Manual re-review: caller forwards pr_number via workflow_call
-          #    input; resolve refs via the GitHub API.
-          if [ -n "$INPUT_PR" ] && [ "$INPUT_PR" != "0" ]; then
-            pr_number="$INPUT_PR"
-            echo "Manual re-review of PR #$pr_number — resolving refs via API..."
-            pr_json=$(gh pr view "$pr_number" --json baseRefName,headRefName,headRepository,headRepositoryOwner)
-            base_ref=$(echo "$pr_json" | jq -r '.baseRefName')
-            head_ref=$(echo "$pr_json" | jq -r '.headRefName')
-            head_owner=$(echo "$pr_json" | jq -r '.headRepositoryOwner.login')
-            head_repo=$(echo "$pr_json" | jq -r '.headRepository.name')
-            echo "pr_number=$pr_number" >> $GITHUB_OUTPUT
-            echo "base_ref=$base_ref" >> $GITHUB_OUTPUT
-            echo "head_ref=$head_ref" >> $GITHUB_OUTPUT
-            echo "head_repo=$head_owner/$head_repo" >> $GITHUB_OUTPUT
-          else
-            echo "pr_number=$PR_PR" >> $GITHUB_OUTPUT
-            echo "base_ref=${{ github.base_ref }}" >> $GITHUB_OUTPUT
-            echo "head_ref=${{ github.head_ref }}" >> $GITHUB_OUTPUT
-            echo "head_repo=${{ github.repository }}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Full history so the base ref is available for an accurate diff.
-          # On manual re-review the event ref isn't the PR branch, so check out
-          # the resolved head ref explicitly.
-          ref: ${{ steps.ctx.outputs.head_ref }}
 
       # Language detection is retained so later steps (or future tools) can
       # install runtimes. Gemini itself does not need them to review a diff.
@@ -116,7 +78,7 @@ jobs:
       - name: Generate PR Diff
         id: pr-diff
         env:
-          BASE_REF: ${{ steps.ctx.outputs.base_ref }}
+          BASE_REF: ${{ github.base_ref }}
           MAX_DIFF_CHARS: ${{ inputs.max_diff_chars }}
         run: |
           # Ensure the base ref exists locally (shallow/PR checkouts can miss it).
@@ -211,7 +173,7 @@ jobs:
         if: always() && hashFiles('review_report.md') != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ -s review_report.md ]; then
             gh pr comment "${PR_NUMBER}" --body-file review_report.md
