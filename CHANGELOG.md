@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-18
+
+### Changed
+- **Raised default `max_diff_chars` from 60000 → 250000.** The original limit was conservative; `gemini-3.5-flash` has a 1M-token context window, and a legitimate feature PR (#82) was silently skipped by 507 bytes.
+- **Skipped reviews now post a comment** explaining the skip reason (empty diff, or oversized diff with the byte count and limit) instead of posting nothing. Previously you couldn't tell a skipped review from a broken one without checking the Actions tab.
+
+### Added
+- **Manual re-review via `pr_number` input.** Caller workflows can add a `workflow_dispatch` trigger that forwards `pr_number`; the reusable workflow resolves the PR's refs via the API and re-runs the review. Useful for forcing a review after fixing review-tool issues or to bypass a one-off skip.
+
+### Fixed
+- Diff-step env now reads `BASE_REF` from the resolved context step instead of `github.base_ref` (which is empty on manual triggers).
+
 ## [1.1.0] - 2026-07-17
 
 ### Changed
