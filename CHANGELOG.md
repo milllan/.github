@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-18
+
+### Added
+- **Multi-provider support.** New `provider` input (`gemini` | `openai`). The `openai` branch uses the OpenAI-compatible chat-completions format and works with any compatible endpoint (Z.ai GLM, OpenRouter, DeepSeek, OpenAI) via the `openai_endpoint` input (defaults to Z.ai). Callers can now run two review jobs in parallel — e.g. Gemini + GLM — for two genuinely independent reviews per PR.
+- `openai_endpoint` input and `OPENAI_API_KEY` secret for the OpenAI-compatible branch.
+- Comment headings now name the provider (`## Gemini Code Review` / `## GLM Code Review`) so multiple reviews on one PR are distinguishable.
+
+### Changed
+- `GEMINI_API_KEY` is now optional (`required: false`) since either provider key may be present depending on `provider`.
+
 ## [1.2.0] - 2026-07-18
 
 ### Changed
