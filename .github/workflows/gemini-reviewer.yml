@@ -8,17 +8,28 @@ name: Gemini Code Reviewer
 on:
   workflow_call:
     inputs:
+      provider:
+        description: "Review backend: 'gemini' (Google Generative Language API) or 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, OpenRouter, DeepSeek)."
+        type: string
+        default: "gemini"
       model:
-        description: "Gemini model used for the review (e.g. gemini-3.5-flash)."
+        description: "Model name for the chosen provider (e.g. gemini-3.5-flash, glm-5.2)."
         type: string
         default: "gemini-3.5-flash"
+      openai_endpoint:
+        description: "OpenAI-compatible chat-completions endpoint. Ignored unless provider=openai. Defaults to Z.ai."
+        type: string
+        default: "https://api.z.ai/api/paas/v4/chat/completions"
       max_diff_chars:
-        description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit. gemini-3.5-flash has a 1M-token context window, so large values are safe."
+        description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit."
         type: number
         default: 250000
     secrets:
       GEMINI_API_KEY:
-        required: true
+        required: false
+      OPENAI_API_KEY:
+        description: "API key for the openai-compatible provider (e.g. Z.ai key when endpoint is Z.ai)."
+        required: false
 
 permissions:
   contents: read
@@ -99,34 +110,74 @@ jobs:
             exit 0
           fi
 
-      - name: Run Gemini Review
-        id: gemini
+      - name: Run Review
+        id: review-step
         if: steps.pr-diff.outputs.skip != 'true'
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PROVIDER: ${{ inputs.provider }}
           MODEL: ${{ inputs.model }}
+          OPENAI_ENDPOINT: ${{ inputs.openai_endpoint }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set +e
-          # Build the request body with jq so diff contents (quotes, backticks,
-          # $, etc.) cannot break JSON parsing or inject into the prompt.
-          jq -n --rawfile diff pr_diff.txt '{
-            system_instruction: { parts: [ { text: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." } ] },
-            contents: [ { role: "user", parts: [ { text: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") } ] } ],
-            generationConfig: { temperature: 0.2 }
-          }' > body.json
 
-          # Non-streaming generateContent; the key is passed as a query param.
-          # Retry transient Google-side errors (502/503/504 overload, 429 rate
-          # limit) with exponential backoff so a temporary spike doesn't waste
-          # a review. Non-transient errors (4xx) fail immediately.
+          # Human-readable label for the comment heading, derived from provider.
+          case "$PROVIDER" in
+            gemini) LABEL="Gemini" ;;
+            openai) LABEL="GLM" ;;
+            *) LABEL="$PROVIDER" ;;
+          esac
+
+          # ---- Build the request body for the chosen provider ----
+          # jq --rawfile loads the diff safely so its contents (quotes, backticks,
+          # $) cannot break JSON parsing or inject into the prompt.
+          case "$PROVIDER" in
+            gemini)
+              jq -n --rawfile diff pr_diff.txt '{
+                system_instruction: { parts: [ { text: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." } ] },
+                contents: [ { role: "user", parts: [ { text: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") } ] } ],
+                generationConfig: { temperature: 0.2 }
+              }' > body.json
+              ;;
+            openai)
+              jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
+                model: $model,
+                messages: [
+                  { role: "system", content: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." },
+                  { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
+                ],
+                temperature: 0.2
+              }' > body.json
+              ;;
+            *)
+              printf '## %s Code Review\n\n:warning: Unknown provider "%s".\n' "$LABEL" "$PROVIDER" > review_report.md
+              echo "status=error" >> $GITHUB_OUTPUT
+              exit 0
+              ;;
+          esac
+
+          # ---- Call the provider endpoint with retry on transient errors ----
+          # 429/502/503/504 get exponential backoff; 4xx fail immediately.
           max_attempts=4
           attempt=1
           http_code=""
           while [ "$attempt" -le "$max_attempts" ]; do
-            http_code=$(curl -sS -w "%{http_code}" -o response.json \
-              -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}" \
-              -H 'Content-Type: application/json' \
-              -d @body.json)
+            case "$PROVIDER" in
+              gemini)
+                http_code=$(curl -sS -w "%{http_code}" -o response.json \
+                  -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}" \
+                  -H 'Content-Type: application/json' \
+                  -d @body.json)
+                ;;
+              openai)
+                http_code=$(curl -sS -w "%{http_code}" -o response.json \
+                  -X POST "${OPENAI_ENDPOINT}" \
+                  -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+                  -H 'Content-Type: application/json' \
+                  -d @body.json)
+                ;;
+            esac
             if [ "$http_code" = "200" ]; then
               break
             fi
@@ -144,30 +195,45 @@ jobs:
           done
 
           if [ "$http_code" != "200" ]; then
-            msg=$(jq -r '.error.message // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
-            printf '## Gemini Code Review\n\n:warning: Gemini API returned HTTP %s after %s attempt(s): %s\n' "$http_code" "$attempt" "$msg" > review_report.md
+            msg=$(jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
+            printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): %s\n' "$LABEL" "$http_code" "$attempt" "$msg" > review_report.md
             echo "status=error" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          review=$(jq -r '.candidates[0].content.parts[0].text // empty' response.json)
+          # ---- Extract the review text (response shape differs per provider) ----
+          case "$PROVIDER" in
+            gemini)
+              review=$(jq -r '.candidates[0].content.parts[0].text // empty' response.json)
+              reason=$(jq -r '.candidates[0].finishReason // .promptFeedback.blockReason // "unknown"' response.json)
+              ;;
+            openai)
+              review=$(jq -r '.choices[0].message.content // empty' response.json)
+              reason=$(jq -r '.choices[0].finish_reason // "unknown"' response.json)
+              ;;
+          esac
+
           if [ -z "$review" ]; then
-            reason=$(jq -r '.candidates[0].finishReason // .promptFeedback.blockReason // "unknown"' response.json)
-            printf '## Gemini Code Review\n\n:warning: Gemini returned no content (finishReason: %s).\n' "$reason" > review_report.md
+            printf '## %s Code Review\n\n:warning: %s returned no content (%s).\n' "$LABEL" "$LABEL" "$reason" > review_report.md
             echo "status=empty" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Drop the model's leading summary heading duplication if present.
-          { printf '## Gemini Code Review\n\n'; printf '%s\n' "$review"; } > review_report.md
+          { printf '## %s Code Review\n\n' "$LABEL"; printf '%s\n' "$review"; } > review_report.md
           echo "status=ok" >> $GITHUB_OUTPUT
 
       - name: Build skip comment
         if: steps.pr-diff.outputs.skip == 'true'
         env:
           SKIP_REASON: ${{ steps.pr-diff.outputs.skip_reason }}
+          PROVIDER: ${{ inputs.provider }}
         run: |
-          { printf '## Gemini Code Review\n\n:information_source: %s\n' "$SKIP_REASON"; } > review_report.md
+          case "$PROVIDER" in
+            gemini) LABEL="Gemini" ;;
+            openai) LABEL="GLM" ;;
+            *) LABEL="$PROVIDER" ;;
+          esac
+          { printf '## %s Code Review\n\n:information_source: %s\n' "$LABEL" "$SKIP_REASON"; } > review_report.md
 
       - name: Post Review Comment
         if: always() && hashFiles('review_report.md') != ''
