@@ -136,6 +136,19 @@ jobs:
         run: |
           set +e
 
+          # ---- Shared error-reporting helpers ----
+          # Centralizes the provider-agnostic failure comment so each branch
+          # doesn't re-implement the same formatting. All branches only format
+          # LABEL/http_code/attempt/msg.
+          get_error_msg() {  # no args; reads response.json, echoes extracted message
+            jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json
+          }
+          fail_fast() {  # $1=http_code $2=attempt $3=msg
+            printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): %s\n' "$LABEL" "$1" "$2" "$3" > review_report.md
+            echo "status=error" >> $GITHUB_OUTPUT
+            exit 0
+          }
+
           # ---- Resolve provider label, endpoint, and API key ----
           case "$PROVIDER" in
             gemini)
@@ -271,14 +284,11 @@ jobs:
               esac
 
               if [ "$fatal" = "yes" ]; then
-                msg=$(jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
-                printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): %s\n' "$LABEL" "$http_code" "$attempt" "$msg" > review_report.md
-                echo "status=error" >> $GITHUB_OUTPUT
-                exit 0
+                fail_fast "$http_code" "$attempt" "$(get_error_msg)"
               fi
 
               if [ "$unavailable" = "yes" ]; then
-                msg=$(jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
+                msg=$(get_error_msg)
                 echo "Model '$MODEL' unavailable (HTTP $http_code): $msg — trying next model."
                 last_error="Model '$MODEL' unavailable (HTTP $http_code): $msg"
                 break
@@ -293,10 +303,7 @@ jobs:
               fi
 
               # Any other non-200 code: treat as a hard failure.
-              msg=$(jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
-              printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): %s\n' "$LABEL" "$http_code" "$attempt" "$msg" > review_report.md
-              echo "status=error" >> $GITHUB_OUTPUT
-              exit 0
+              fail_fast "$http_code" "$attempt" "$(get_error_msg)"
             done
 
             if [ -z "$used_model" ]; then
