@@ -9,15 +9,19 @@ on:
   workflow_call:
     inputs:
       provider:
-        description: "Review backend: 'gemini' (Google Generative Language API) or 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, OpenRouter, DeepSeek)."
+        description: "Review backend: 'gemini' (Google Generative Language API), 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, DeepSeek), or 'openrouter' (OpenRouter, OpenAI-compatible)."
         type: string
         default: "gemini"
       model:
-        description: "Model name for the chosen provider (e.g. gemini-3.5-flash, glm-5.2)."
+        description: "Model name for the chosen provider (e.g. gemini-3.5-flash, glm-5.2, tencent/hy3:free). For provider 'openai'/'openrouter' this is the first model tried; see 'models' for a fallback list."
         type: string
         default: "gemini-3.5-flash"
+      models:
+        description: "Space- or comma-separated fallback list of models for provider 'openai'/'openrouter'. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. If empty, only 'model' is used."
+        type: string
+        default: ""
       openai_endpoint:
-        description: "OpenAI-compatible chat-completions endpoint. Ignored unless provider=openai. Defaults to Z.ai's Coding Plan endpoint (subscription); use https://api.z.ai/api/paas/v4/chat/completions for pay-per-token API credits."
+        description: "OpenAI-compatible chat-completions endpoint for provider 'openai' or 'openrouter'. For 'openai' defaults to Z.ai's Coding Plan endpoint (subscription); for 'openrouter' defaults to https://openrouter.ai/api/v1/chat/completions. Override to point at OpenRouter/DeepSeek/OpenAI directly."
         type: string
         default: "https://api.z.ai/api/coding/paas/v4/chat/completions"
       max_diff_chars:
@@ -29,6 +33,9 @@ on:
         required: false
       OPENAI_API_KEY:
         description: "API key for the openai-compatible provider (e.g. Z.ai key when endpoint is Z.ai)."
+        required: false
+      OPENROUTER_API_KEY:
+        description: "API key for the openrouter provider (https://openrouter.ai)."
         required: false
 
 permissions:
@@ -116,107 +123,177 @@ jobs:
         env:
           PROVIDER: ${{ inputs.provider }}
           MODEL: ${{ inputs.model }}
+          MODELS: ${{ inputs.models }}
           OPENAI_ENDPOINT: ${{ inputs.openai_endpoint }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           set +e
 
-          # Human-readable label for the comment heading, derived from provider.
+          # ---- Resolve provider label, endpoint, and API key ----
           case "$PROVIDER" in
-            gemini) LABEL="Gemini" ;;
-            openai) LABEL="GLM" ;;
-            *) LABEL="$PROVIDER" ;;
+            gemini)
+              LABEL="Gemini"
+              ENDPOINT=""
+              KEY="$GEMINI_API_KEY"
+              ;;
+            openai)
+              LABEL="GLM"
+              ENDPOINT="${OPENAI_ENDPOINT:-https://api.z.ai/api/coding/paas/v4/chat/completions}"
+              KEY="$OPENAI_API_KEY"
+              ;;
+            openrouter)
+              LABEL="OpenRouter"
+              ENDPOINT="${OPENAI_ENDPOINT:-https://openrouter.ai/api/v1/chat/completions}"
+              KEY="$OPENROUTER_API_KEY"
+              ;;
+            *)
+              LABEL="$PROVIDER"
+              ENDPOINT=""
+              KEY=""
+              ;;
           esac
+
+          # ---- Build the fallback model list ----
+          # `models` (space/comma separated) takes precedence; otherwise the
+          # single `model` input is used. Fallback only matters for OpenAI-
+          # compatible providers, but it is built for all (harmless for gemini,
+          # which carries a single entry).
+          if [ -n "$MODELS" ]; then
+            IFS=' ,' read -ra MODEL_LIST <<< "$MODELS"
+          else
+            MODEL_LIST=("$MODEL")
+          fi
 
           # ---- Build the request body for the chosen provider ----
           # jq --rawfile loads the diff safely so its contents (quotes, backticks,
           # $) cannot break JSON parsing or inject into the prompt.
-          case "$PROVIDER" in
-            gemini)
-              jq -n --rawfile diff pr_diff.txt '{
-                system_instruction: { parts: [ { text: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." } ] },
-                contents: [ { role: "user", parts: [ { text: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") } ] } ],
-                generationConfig: { temperature: 0.2 }
-              }' > body.json
-              ;;
-            openai)
-              jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
-                model: $model,
-                messages: [
-                  { role: "system", content: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." },
-                  { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
-                ],
-                temperature: 0.2
-              }' > body.json
-              ;;
-            *)
-              printf '## %s Code Review\n\n:warning: Unknown provider "%s".\n' "$LABEL" "$PROVIDER" > review_report.md
-              echo "status=error" >> $GITHUB_OUTPUT
-              exit 0
-              ;;
-          esac
-
-          # ---- Call the provider endpoint with retry on transient errors ----
-          # 502/503/504 (overload) and 429 (rate limit) get exponential backoff.
-          # But a 429 whose body indicates a *permanent* condition (insufficient
-          # balance, zero quota, invalid key) is not retried — retrying just
-          # wastes ~100s before posting the same failure.
-          max_attempts=4
-          attempt=1
-          http_code=""
-          while [ "$attempt" -le "$max_attempts" ]; do
+          build_body() {
             case "$PROVIDER" in
               gemini)
-                http_code=$(curl -sS -w "%{http_code}" -o response.json \
-                  -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}" \
-                  -H 'Content-Type: application/json' \
-                  -d @body.json)
+                jq -n --rawfile diff pr_diff.txt '{
+                  system_instruction: { parts: [ { text: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." } ] },
+                  contents: [ { role: "user", parts: [ { text: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") } ] } ],
+                  generationConfig: { temperature: 0.2 }
+                }' > body.json
                 ;;
-              openai)
-                http_code=$(curl -sS -w "%{http_code}" -o response.json \
-                  -X POST "${OPENAI_ENDPOINT}" \
-                  -H "Authorization: Bearer ${OPENAI_API_KEY}" \
-                  -H 'Content-Type: application/json' \
-                  -d @body.json)
+              openai|openrouter)
+                jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
+                  model: $model,
+                  messages: [
+                    { role: "system", content: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." },
+                    { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
+                  ],
+                  temperature: 0.2
+                }' > body.json
                 ;;
-            esac
-            if [ "$http_code" = "200" ]; then
-              break
-            fi
-            # Only retry if the error is plausibly transient.
-            retry=no
-            case "$http_code" in
-              502|503|504)
-                retry=yes
-                ;;
-              429)
-                # Peek at the body: permanent 429s mention balance/quota/billing/key.
-                body_hint=$(jq -r '(.error.message // .error // "") | ascii_downcase' response.json 2>/dev/null || echo "")
-                case "$body_hint" in
-                  *balance*|*recharge*|*quota*|*billing*|*limit*:*\ 0*|*invalid*key*|*unauthorized*)
-                    echo "HTTP 429 with permanent cause (\"$body_hint\") — not retrying."
-                    break
-                    ;;
-                  *)
-                    retry=yes
-                    ;;
-                esac
+              *)
+                printf '## %s Code Review\n\n:warning: Unknown provider "%s".\n' "$LABEL" "$PROVIDER" > review_report.md
+                echo "status=error" >> $GITHUB_OUTPUT
+                exit 0
                 ;;
             esac
-            if [ "$retry" = "yes" ]; then
-              wait_s=$((10 * attempt))
-              echo "HTTP $http_code on attempt $attempt/$max_attempts — retrying in ${wait_s}s..."
-              sleep "$wait_s"
-              attempt=$((attempt + 1))
-            else
-              break
+          }
+
+          # ---- Call the provider, trying each model until one succeeds ----
+          # Outer loop: models. Inner loop: up to 4 attempts with transient retry.
+          #  - 502/503/504 and transient 429 -> retry the same model.
+          #  - 400/404/422 (model removed/deprecated) -> skip to the next model.
+          #  - 401/403 and permanent 429 (balance/quota/key) -> fail fast, since
+          #    the key is shared and other models would fail identically.
+          max_attempts=4
+          used_model=""
+          last_error=""
+          for MODEL in "${MODEL_LIST[@]}"; do
+            build_body
+            attempt=1
+            http_code=""
+            while [ "$attempt" -le "$max_attempts" ]; do
+              case "$PROVIDER" in
+                gemini)
+                  http_code=$(curl -sS -w "%{http_code}" -o response.json \
+                    -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}" \
+                    -H 'Content-Type: application/json' \
+                    -d @body.json)
+                  ;;
+                openai|openrouter)
+                  http_code=$(curl -sS -w "%{http_code}" -o response.json \
+                    -X POST "${ENDPOINT}" \
+                    -H "Authorization: Bearer ${KEY}" \
+                    -H 'Content-Type: application/json' \
+                    -d @body.json)
+                  ;;
+              esac
+
+              if [ "$http_code" = "200" ]; then
+                used_model="$MODEL"
+                break 2
+              fi
+
+              retry=no
+              unavailable=no
+              fatal=no
+              case "$http_code" in
+                502|503|504)
+                  retry=yes
+                  ;;
+                429)
+                  # Peek at the body: permanent 429s mention balance/quota/billing/key.
+                  body_hint=$(jq -r '(.error.message // .error // "") | ascii_downcase' response.json 2>/dev/null || echo "")
+                  case "$body_hint" in
+                    *balance*|*recharge*|*quota*|*billing*|*limit*:*\ 0*|*invalid*key*|*unauthorized*)
+                      fatal=yes
+                      ;;
+                    *)
+                      retry=yes
+                      ;;
+                  esac
+                  ;;
+                401|403)
+                  fatal=yes
+                  ;;
+                400|404|422)
+                  unavailable=yes
+                  ;;
+              esac
+
+              if [ "$fatal" = "yes" ]; then
+                msg=$(jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
+                printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): %s\n' "$LABEL" "$http_code" "$attempt" "$msg" > review_report.md
+                echo "status=error" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+
+              if [ "$unavailable" = "yes" ]; then
+                msg=$(jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
+                echo "Model '$MODEL' unavailable (HTTP $http_code): $msg — trying next model."
+                last_error="Model '$MODEL' unavailable (HTTP $http_code): $msg"
+                break
+              fi
+
+              if [ "$retry" = "yes" ]; then
+                wait_s=$((10 * attempt))
+                echo "HTTP $http_code on attempt $attempt/$max_attempts — retrying in ${wait_s}s..."
+                sleep "$wait_s"
+                attempt=$((attempt + 1))
+                continue
+              fi
+
+              # Any other non-200 code: treat as a hard failure.
+              msg=$(jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
+              printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): %s\n' "$LABEL" "$http_code" "$attempt" "$msg" > review_report.md
+              echo "status=error" >> $GITHUB_OUTPUT
+              exit 0
+            done
+
+            if [ -z "$used_model" ] && [ -z "$last_error" ]; then
+              last_error="Model '$MODEL' failed after $max_attempts attempt(s) (HTTP $http_code)."
             fi
           done
 
-          if [ "$http_code" != "200" ]; then
-            msg=$(jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json)
-            printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): %s\n' "$LABEL" "$http_code" "$attempt" "$msg" > review_report.md
+          if [ -z "$used_model" ]; then
+            printf '## %s Code Review\n\n:warning: All models failed. Last error: %s\n' "$LABEL" "$last_error" > review_report.md
             echo "status=error" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -227,7 +304,7 @@ jobs:
               review=$(jq -r '.candidates[0].content.parts[0].text // empty' response.json)
               reason=$(jq -r '.candidates[0].finishReason // .promptFeedback.blockReason // "unknown"' response.json)
               ;;
-            openai)
+            openai|openrouter)
               review=$(jq -r '.choices[0].message.content // empty' response.json)
               reason=$(jq -r '.choices[0].finish_reason // "unknown"' response.json)
               ;;
@@ -239,7 +316,11 @@ jobs:
             exit 0
           fi
 
-          { printf '## %s Code Review\n\n' "$LABEL"; printf '%s\n' "$review"; } > review_report.md
+          if [ "$PROVIDER" = "openai" ] || [ "$PROVIDER" = "openrouter" ]; then
+            { printf '## %s Code Review (%s)\n\n' "$LABEL" "$used_model"; printf '%s\n' "$review"; } > review_report.md
+          else
+            { printf '## %s Code Review\n\n' "$LABEL"; printf '%s\n' "$review"; } > review_report.md
+          fi
           echo "status=ok" >> $GITHUB_OUTPUT
 
       - name: Build skip comment
@@ -251,6 +332,7 @@ jobs:
           case "$PROVIDER" in
             gemini) LABEL="Gemini" ;;
             openai) LABEL="GLM" ;;
+            openrouter) LABEL="OpenRouter" ;;
             *) LABEL="$PROVIDER" ;;
           esac
           { printf '## %s Code Review\n\n:information_source: %s\n' "$LABEL" "$SKIP_REASON"; } > review_report.md

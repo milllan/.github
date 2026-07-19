@@ -4,7 +4,7 @@ This repo (`milllan/.github`) hosts a reusable GitHub Actions workflow for AI co
 
 ## The product
 
-`/.github/workflows/gemini-reviewer.yml` — a `workflow_call`-only reusable workflow. It does NOT run on its own; it is invoked by a caller workflow in another repo. Despite the filename, it supports two providers: Gemini and any OpenAI-compatible endpoint (default Z.ai GLM).
+`/.github/workflows/gemini-reviewer.yml` — a `workflow_call`-only reusable workflow. It does NOT run on its own; it is invoked by a caller workflow in another repo. Despite the filename, it supports three providers: Gemini, any OpenAI-compatible endpoint (default Z.ai GLM), and OpenRouter (OpenAI-compatible, with an automatic model fallback list).
 
 Current pinned HEAD: see [`commits/main`](https://github.com/milllan/.github/commits/main). Always pin callers to a specific SHA.
 
@@ -14,6 +14,7 @@ Current pinned HEAD: see [`commits/main`](https://github.com/milllan/.github/com
 2. Add the required secret(s) to the repo (Settings → Secrets and variables → Actions):
    - `GEMINI_API_KEY` if using the Gemini job (get from https://aistudio.google.com/apikey)
    - `ZAI_API_KEY` if using the GLM job (get from https://z.ai/apikey) — forwarded as `OPENAI_API_KEY` in the caller
+   - `OPENROUTER_API_KEY` if using the OpenRouter job (get from https://openrouter.ai/keys) — forwarded as `OPENROUTER_API_KEY` in the caller
 3. The repo's default branch must allow Actions to post comments (`pull-requests: write` is set in the caller).
 4. The reusable workflow's repo (`milllan/.github`) must be **public** — GitHub requires this for reusable workflows called across repos.
 
@@ -34,7 +35,7 @@ jobs:
     secrets: { GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} }
 ```
 
-### Two-reviewer caller (Gemini + GLM)
+### Multi-reviewer caller (Gemini + GLM + OpenRouter)
 
 ```yaml
 jobs:
@@ -46,6 +47,13 @@ jobs:
     uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: openai, model: glm-5.2 }
     secrets: { OPENAI_API_KEY: ${{ secrets.ZAI_API_KEY }} }
+  openrouter-review:
+    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    with:
+      provider: openrouter
+      model: tencent/hy3:free
+      models: tencent/hy3:free anthropic/claude-3.5-haiku google/gemini-flash-1.5
+    secrets: { OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }} }
 ```
 
 ## Bumping the SHA
@@ -61,9 +69,12 @@ Never use `@main` — a mutable reference lets any future commit silently change
 
 The provider coupling is isolated to the "Run Review" step:
 - **gemini**: `generativelanguage.googleapis.com/.../models/{model}:generateContent?key=...`, response `.candidates[0].content.parts[0].text`
-- **openai**: `{openai_endpoint}` with `Authorization: Bearer`, response `.choices[0].message.content`
+- **openai**: `{openai_endpoint}` (default Z.ai Coding Plan) with `Authorization: Bearer`, response `.choices[0].message.content`
+- **openrouter**: `{openai_endpoint}` (default `https://openrouter.ai/api/v1/chat/completions`) with `Authorization: Bearer ${OPENROUTER_API_KEY}`, same response shape as openai
 
-To add a third provider whose API differs from both (e.g. direct Anthropic), add a new branch to the `case $PROVIDER` in the "Run Review" step and a new input default. OpenAI-compatible providers (OpenRouter, DeepSeek, Mistral, Groq) need no code change — just a different `openai_endpoint` and key.
+The OpenAI-compatible branch (`openai`/`openrouter`) supports a **model fallback list**: the `models` input (space/comma-separated) is tried in order; if a model returns HTTP 400/404/422 (removed/deprecated) the next is used. Permanent 401/403 or balance/quota 429 fail fast (shared key). The comment heading names the model that actually reviewed, e.g. `## OpenRouter Code Review (tencent/hy3:free)`.
+
+To add a provider whose API differs from both (e.g. direct Anthropic), add a new branch to the `case $PROVIDER` in the "Run Review" step and a new input default + secret. OpenAI-compatible providers (OpenRouter, DeepSeek, Mistral, Groq) need no code change — just a different `openai_endpoint` and key.
 
 ## Known limitations / gotchas
 

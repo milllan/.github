@@ -1,6 +1,6 @@
 # AI Code Reviewer (.github)
 
-Reusable GitHub Actions workflow that runs AI code review on pull requests and posts the result as a PR comment. Supports two independent reviewers per PR: **Google Gemini** and any **OpenAI-compatible** model (defaults to Z.ai GLM).
+Reusable GitHub Actions workflow that runs AI code review on pull requests and posts the result as a PR comment. Supports independent reviewers per PR: **Google Gemini**, any **OpenAI-compatible** model (defaults to Z.ai GLM), and **OpenRouter** (OpenAI-compatible, with a model fallback list).
 
 Other repos reference it via a small caller workflow — there is no account-wide auto-inheritance.
 
@@ -25,6 +25,13 @@ jobs:
     uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: openai, model: glm-5.2 }
     secrets: { OPENAI_API_KEY: ${{ secrets.ZAI_API_KEY }} }
+  openrouter-review:
+    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    with:
+      provider: openrouter
+      model: tencent/hy3:free
+      models: tencent/hy3:free anthropic/claude-3.5-haiku google/gemini-flash-1.5
+    secrets: { OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }} }
 ```
 
 Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https://github.com/milllan/.github/commits/main) — do **not** use `@main`. Bump the SHA deliberately after reviewing changes.
@@ -33,9 +40,10 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `provider` | `gemini` | `gemini` or `openai` (OpenAI-compatible endpoint). |
-| `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`). |
-| `openai_endpoint` | `https://api.z.ai/api/coding/paas/v4/chat/completions` | OpenAI-compatible endpoint. Defaults to Z.ai's **Coding Plan** (subscription). Use `https://api.z.ai/api/paas/v4/chat/completions` for pay-per-token API credits. Also works for OpenRouter, DeepSeek, OpenAI. |
+| `provider` | `gemini` | `gemini`, `openai` (OpenAI-compatible endpoint), or `openrouter` (OpenRouter, OpenAI-compatible). |
+| `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`, `tencent/hy3:free`). For `openai`/`openrouter` this is the first model tried. |
+| `models` | `""` | Space- or comma-separated fallback list for `openai`/`openrouter`. Tried in order; the next is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. Empty = only `model` is used. |
+| `openai_endpoint` | `https://api.z.ai/api/coding/paas/v4/chat/completions` | OpenAI-compatible endpoint. For `openai` defaults to Z.ai's **Coding Plan** (subscription); for `openrouter` defaults to `https://openrouter.ai/api/v1/chat/completions`. Override to point at OpenRouter/DeepSeek/OpenAI directly. |
 | `max_diff_chars` | `250000` | Skip review if the raw diff exceeds this. `0` disables the limit. |
 
 ## Secrets
@@ -44,6 +52,7 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 |--------|---------------|-------|
 | `GEMINI_API_KEY` | `provider=gemini` | Create at https://aistudio.google.com/apikey |
 | `OPENAI_API_KEY` | `provider=openai` | For Z.ai, create at https://z.ai/apikey |
+| `OPENROUTER_API_KEY` | `provider=openrouter` | Create at https://openrouter.ai/keys |
 | `GITHUB_TOKEN` | always | Auto-provided; used to post the PR comment. |
 
 The `GITHUB_TOKEN` is provided automatically by Actions — don't add it as a secret.
@@ -51,7 +60,8 @@ The `GITHUB_TOKEN` is provided automatically by Actions — don't add it as a se
 ## Behavior notes
 
 - **Triggers on** `pull_request` (`opened`, `synchronize`, `reopened`) — every commit gets re-reviewed.
-- **Two comments per PR** when both jobs are enabled, headed `## Gemini Code Review` and `## GLM Code Review`.
+- **Three comments per PR** (or more) when all jobs are enabled, headed `## Gemini Code Review`, `## GLM Code Review`, and `## OpenRouter Code Review (model)`.
+- **Model fallback** (OpenRouter/OpenAI): if a model in `models` is removed/deprecated, the next one is tried automatically; the comment heading names the model that actually reviewed.
 - **Cost guard**: diffs over `max_diff_chars` are skipped with a visible comment (not a silent no-op).
 - **Retries** transient API errors (429/502/503/504) with backoff before giving up.
 - **Graceful degradation**: if a provider key is missing or its API errors, that job posts an error comment; the other reviewer still runs.
