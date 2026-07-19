@@ -21,9 +21,13 @@ on:
         type: string
         default: ""
       openai_endpoint:
-        description: "OpenAI-compatible chat-completions endpoint for provider 'openai' or 'openrouter'. For 'openai' defaults to Z.ai's Coding Plan endpoint (subscription); for 'openrouter' defaults to https://openrouter.ai/api/v1/chat/completions. Override to point at OpenRouter/DeepSeek/OpenAI directly."
+        description: "OpenAI-compatible chat-completions endpoint for provider 'openai'. Defaults to Z.ai's Coding Plan endpoint (subscription). For 'openrouter' use 'openrouter_endpoint' instead."
         type: string
         default: "https://api.z.ai/api/coding/paas/v4/chat/completions"
+      openrouter_endpoint:
+        description: "Chat-completions endpoint for provider 'openrouter'. Defaults to https://openrouter.ai/api/v1/chat/completions. Override only if you self-host or proxy OpenRouter."
+        type: string
+        default: "https://openrouter.ai/api/v1/chat/completions"
       max_diff_chars:
         description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit."
         type: number
@@ -125,6 +129,7 @@ jobs:
           MODEL: ${{ inputs.model }}
           MODELS: ${{ inputs.models }}
           OPENAI_ENDPOINT: ${{ inputs.openai_endpoint }}
+          OPENROUTER_ENDPOINT: ${{ inputs.openrouter_endpoint }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -145,7 +150,7 @@ jobs:
               ;;
             openrouter)
               LABEL="OpenRouter"
-              ENDPOINT="${OPENAI_ENDPOINT:-https://openrouter.ai/api/v1/chat/completions}"
+              ENDPOINT="${OPENROUTER_ENDPOINT:-https://openrouter.ai/api/v1/chat/completions}"
               KEY="$OPENROUTER_API_KEY"
               ;;
             *)
