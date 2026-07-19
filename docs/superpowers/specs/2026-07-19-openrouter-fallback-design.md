@@ -36,8 +36,12 @@ default endpoint + secret, plus a model-loop around the existing call path.
 - `model`: for `openai`/`openrouter`, the **first** model tried.
 - `models` (new, default `""`): space- or comma-separated fallback list for
   `openai`/`openrouter`. Empty ⇒ only `model` is used.
-- `openai_endpoint`: for `openrouter` now defaults to
-  `https://openrouter.ai/api/v1/chat/completions` (resolved in-script from provider).
+- `openai_endpoint`: for `openai` only, defaults to Z.ai's Coding Plan endpoint.
+- `openrouter_endpoint` (new, default `https://openrouter.ai/api/v1/chat/completions`):
+  for `openrouter` only. `ENDPOINT` is resolved from `OPENROUTER_ENDPOINT` (not
+  `OPENAI_ENDPOINT`), so the openrouter call always targets OpenRouter unless
+  explicitly overridden. This was the fix for an earlier bug where openrouter
+  inherited the Z.ai `openai_endpoint` default and got `401`.
 
 ### Secrets (added)
 - `OPENROUTER_API_KEY` (required: false) — forwarded as env `OPENROUTER_API_KEY`.
