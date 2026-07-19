@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-07-19
+
+### Added
+- **`openrouter` provider.** A third first-class provider, OpenAI-compatible, defaulting to `https://openrouter.ai/api/v1/chat/completions`. Uses the new `OPENROUTER_API_KEY` secret and its own `openrouter_endpoint` input (separate from `openai_endpoint`, which stays Z.ai's default). Comment heading becomes `## OpenRouter Code Review (model)` so you can see which model reviewed.
+- **Model fallback list.** New `models` input (space/comma-separated) for `openai`/`openrouter`. Tried in order; if a model is removed/deprecated (HTTP 400/404/422) the next is used automatically. The comment heading names the model that actually succeeded.
+- **Fail-fast on shared-key errors.** `401`/`403` and permanent `429` (balance/quota/key) now abort the whole run instead of burning the fallback list — the key is shared, so other models would fail identically.
+
+### Changed
+- The "Run Review" step now wraps the per-model call in an outer model loop; the existing 4-attempt transient-retry loop is the inner loop. Response parsing for `openai`/`openrouter` is shared.
+
 ## [1.4.0] - 2026-07-19
 
 ### Changed

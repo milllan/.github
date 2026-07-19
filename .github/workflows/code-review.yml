@@ -1,0 +1,19 @@
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  openrouter-review:
+    uses: ./.github/workflows/gemini-reviewer.yml
+    with:
+      provider: openrouter
+      model: tencent/hy3:free
+      models: tencent/hy3:free anthropic/claude-3.5-haiku google/gemini-flash-1.5
+    secrets:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
