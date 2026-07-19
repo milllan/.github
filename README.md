@@ -41,8 +41,8 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 | Input | Default | Description |
 |-------|---------|-------------|
 | `provider` | `gemini` | `gemini`, `openai` (OpenAI-compatible endpoint), or `openrouter` (OpenRouter, OpenAI-compatible). |
-| `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`, `tencent/hy3:free`). For `openai`/`openrouter` this is the first model tried. |
-| `models` | `""` | Space- or comma-separated fallback list for `openai`/`openrouter`. Tried in order; the next is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. Empty = only `model` is used. |
+| `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`, `tencent/hy3:free`). For `openai`/`openrouter`, this is used **only when `models` is empty** — if `models` is set, it fully overrides `model`. |
+| `models` | `""` | Space- or comma-separated fallback list for `openai`/`openrouter`. Tried in order; the next is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. When set, it **completely replaces** `model` as the ordered list to try. Empty = only `model` is used. Ignored for `gemini`. |
 | `openai_endpoint` | `https://api.z.ai/api/coding/paas/v4/chat/completions` | OpenAI-compatible endpoint for `openai`. Defaults to Z.ai's **Coding Plan** (subscription). Use `https://api.z.ai/api/paas/v4/chat/completions` for pay-per-token API credits. |
 | `openrouter_endpoint` | `https://openrouter.ai/api/v1/chat/completions` | Chat-completions endpoint for `openrouter`. Only override if you self-host or proxy OpenRouter. |
 | `max_diff_chars` | `250000` | Skip review if the raw diff exceeds this. `0` disables the limit. |

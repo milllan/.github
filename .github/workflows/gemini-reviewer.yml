@@ -166,7 +166,12 @@ jobs:
           # compatible providers, but it is built for all (harmless for gemini,
           # which carries a single entry).
           if [ -n "$MODELS" ]; then
-            IFS=' ,' read -ra MODEL_LIST <<< "$MODELS"
+            MODEL_LIST=()
+            for m in $MODELS; do
+              [ -n "$m" ] && MODEL_LIST+=("$m")
+            done
+            # If the list resolved to nothing (e.g. only separators), fall back to `model`.
+            [ "${#MODEL_LIST[@]}" -eq 0 ] && MODEL_LIST=("$MODEL")
           else
             MODEL_LIST=("$MODEL")
           fi
@@ -218,12 +223,14 @@ jobs:
               case "$PROVIDER" in
                 gemini)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
+                    --connect-timeout 10 --max-time 120 \
                     -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}" \
                     -H 'Content-Type: application/json' \
                     -d @body.json)
                   ;;
                 openai|openrouter)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
+                    --connect-timeout 10 --max-time 120 \
                     -X POST "${ENDPOINT}" \
                     -H "Authorization: Bearer ${KEY}" \
                     -H 'Content-Type: application/json' \
@@ -292,8 +299,12 @@ jobs:
               exit 0
             done
 
-            if [ -z "$used_model" ] && [ -z "$last_error" ]; then
-              last_error="Model '$MODEL' failed after $max_attempts attempt(s) (HTTP $http_code)."
+            if [ -z "$used_model" ]; then
+              if [ -z "$last_error" ]; then
+                last_error="Model '$MODEL' failed after $max_attempts attempt(s) (HTTP $http_code)."
+              else
+                last_error="$last_error; Model '$MODEL' failed after $max_attempts attempt(s) (HTTP $http_code)."
+              fi
             fi
           done
 
