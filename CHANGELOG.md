@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-07-19
+
+### Added
+- **`zen` provider (OpenCode Zen gateway).** A fifth first-class provider, OpenAI-compatible, defaulting to `https://opencode.ai/zen/v1/chat/completions`. Uses the new `OPENCODE_API_KEY` secret and its own `zen_endpoint` input. Free models (`deepseek-v4-flash-free`, `mimo-v2.5-free`) need no billing. Comment heading becomes `## OpenCode Zen Code Review (deepseek-v4-flash-free)` so you can see which model reviewed. Shares the OpenAI-compatible request/response path and the `models` fallback list.
+- **Reasoning-model fallback.** OpenAI-compatible providers now fall back to `.choices[0].message.reasoning` when `content` is empty (e.g. `mimo-v2.5-free`), so reasoning-only models still produce a review comment instead of a "no content" error.
+- Callers can now run up to six parallel reviewers (Gemini + GLM + OpenRouter + NVIDIA NIM + two OpenCode Zen free models).
+
 ## [1.6.0] - 2026-07-19
 
 ### Added

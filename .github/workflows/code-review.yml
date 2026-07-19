@@ -24,3 +24,17 @@ jobs:
       model: z-ai/glm-5.2
     secrets:
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+  zen-deepseek-review:
+    uses: ./.github/workflows/gemini-reviewer.yml
+    with:
+      provider: zen
+      model: deepseek-v4-flash-free
+    secrets:
+      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+  zen-mimo-review:
+    uses: ./.github/workflows/gemini-reviewer.yml
+    with:
+      provider: zen
+      model: mimo-v2.5-free
+    secrets:
+      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
