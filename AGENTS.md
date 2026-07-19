@@ -31,7 +31,7 @@ permissions:
   pull-requests: write
 jobs:
   review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: gemini, model: gemini-3.5-flash }
     secrets: { GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} }
 ```
@@ -41,22 +41,22 @@ jobs:
 ```yaml
 jobs:
   gemini-review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: gemini, model: gemini-3.5-flash }
     secrets: { GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} }
   glm-review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: openai, model: glm-5.2 }
     secrets: { OPENAI_API_KEY: ${{ secrets.ZAI_API_KEY }} }
   openrouter-review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with:
       provider: openrouter
       model: tencent/hy3:free
       models: tencent/hy3:free anthropic/claude-3.5-haiku google/gemini-flash-1.5
     secrets: { OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }} }
   nim-review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: nim, model: z-ai/glm-5.2 }
     secrets: { NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }} }
 ```

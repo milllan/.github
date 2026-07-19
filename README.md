@@ -18,22 +18,22 @@ permissions:
   pull-requests: write
 jobs:
   gemini-review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: gemini, model: gemini-3.5-flash }
     secrets: { GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} }
   glm-review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: openai, model: glm-5.2 }
     secrets: { OPENAI_API_KEY: ${{ secrets.ZAI_API_KEY }} }
   openrouter-review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with:
       provider: openrouter
       model: tencent/hy3:free
       models: tencent/hy3:free anthropic/claude-3.5-haiku google/gemini-flash-1.5
     secrets: { OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }} }
   nim-review:
-    uses: milllan/.github/.github/workflows/gemini-reviewer.yml@<SHA>
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with:
       provider: nim
       model: z-ai/glm-5.2
@@ -69,7 +69,7 @@ The `GITHUB_TOKEN` is provided automatically by Actions — don't add it as a se
 ## Behavior notes
 
 - **Triggers on** `pull_request` (`opened`, `synchronize`, `reopened`) — every commit gets re-reviewed.
-- **Three comments per PR** (or more) when all jobs are enabled, headed `## Gemini Code Review`, `## GLM Code Review`, `## OpenRouter Code Review (model)`, and `## NVIDIA NIM Code Review (model)`.
+- **Four comments per PR** (or more) when all jobs are enabled, headed `## Gemini Code Review`, `## GLM Code Review`, `## OpenRouter Code Review (model)`, and `## NVIDIA NIM Code Review (model)`.
 - **Model fallback** (OpenRouter/OpenAI/NIM): if a model in `models` is removed/deprecated, the next one is tried automatically; the comment heading names the model that actually reviewed.
 - **Cost guard**: diffs over `max_diff_chars` are skipped with a visible comment (not a silent no-op).
 - **Retries** transient API errors (429/502/503/504) with backoff before giving up.
