@@ -9,15 +9,15 @@ on:
   workflow_call:
     inputs:
       provider:
-        description: "Review backend: 'gemini' (Google Generative Language API), 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, DeepSeek), or 'openrouter' (OpenRouter, OpenAI-compatible)."
+        description: "Review backend: 'gemini' (Google Generative Language API), 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, DeepSeek), 'openrouter' (OpenRouter, OpenAI-compatible), or 'nim' (NVIDIA NIM, OpenAI-compatible, e.g. z-ai/glm-5.2)."
         type: string
         default: "gemini"
       model:
-        description: "Model name for the chosen provider (e.g. gemini-3.5-flash, glm-5.2, tencent/hy3:free). For provider 'openai'/'openrouter' this is the first model tried; see 'models' for a fallback list."
+        description: "Model name for the chosen provider (e.g. gemini-3.5-flash, glm-5.2, tencent/hy3:free, z-ai/glm-5.2). For provider 'openai'/'openrouter'/'nim' this is the first model tried; see 'models' for a fallback list."
         type: string
         default: "gemini-3.5-flash"
       models:
-        description: "Space- or comma-separated fallback list of models for provider 'openai'/'openrouter'. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. If empty, only 'model' is used."
+        description: "Space- or comma-separated fallback list of models for provider 'openai'/'openrouter'/'nim'. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. If empty, only 'model' is used."
         type: string
         default: ""
       openai_endpoint:
@@ -28,6 +28,10 @@ on:
         description: "Chat-completions endpoint for provider 'openrouter'. Defaults to https://openrouter.ai/api/v1/chat/completions. Override only if you self-host or proxy OpenRouter."
         type: string
         default: "https://openrouter.ai/api/v1/chat/completions"
+      nim_endpoint:
+        description: "Chat-completions endpoint for provider 'nim'. Defaults to https://integrate.api.nvidia.com/v1/chat/completions (NVIDIA NIM). Override only if you self-host or proxy NIM."
+        type: string
+        default: "https://integrate.api.nvidia.com/v1/chat/completions"
       max_diff_chars:
         description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit."
         type: number
@@ -40,6 +44,9 @@ on:
         required: false
       OPENROUTER_API_KEY:
         description: "API key for the openrouter provider (https://openrouter.ai)."
+        required: false
+      NVIDIA_API_KEY:
+        description: "API key for the nim provider (NVIDIA NIM, https://build.nvidia.com). Get one at https://build.nvidia.com/settings/api-keys."
         required: false
 
 permissions:
@@ -130,9 +137,11 @@ jobs:
           MODELS: ${{ inputs.models }}
           OPENAI_ENDPOINT: ${{ inputs.openai_endpoint }}
           OPENROUTER_ENDPOINT: ${{ inputs.openrouter_endpoint }}
+          NIM_ENDPOINT: ${{ inputs.nim_endpoint }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
         run: |
           set +e
 
@@ -152,6 +161,11 @@ jobs:
               LABEL="OpenRouter"
               ENDPOINT="${OPENROUTER_ENDPOINT:-https://openrouter.ai/api/v1/chat/completions}"
               KEY="$OPENROUTER_API_KEY"
+              ;;
+            nim)
+              LABEL="NVIDIA NIM"
+              ENDPOINT="${NIM_ENDPOINT:-https://integrate.api.nvidia.com/v1/chat/completions}"
+              KEY="$NVIDIA_API_KEY"
               ;;
             *)
               LABEL="$PROVIDER"
@@ -188,7 +202,7 @@ jobs:
                   generationConfig: { temperature: 0.2 }
                 }' > body.json
                 ;;
-              openai|openrouter)
+              openai|openrouter|nim)
                 jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
                   model: $model,
                   messages: [
@@ -228,7 +242,7 @@ jobs:
                     -H 'Content-Type: application/json' \
                     -d @body.json)
                   ;;
-                openai|openrouter)
+                openai|openrouter|nim)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
                     --connect-timeout 10 --max-time 120 \
                     -X POST "${ENDPOINT}" \
@@ -320,7 +334,7 @@ jobs:
               review=$(jq -r '.candidates[0].content.parts[0].text // empty' response.json)
               reason=$(jq -r '.candidates[0].finishReason // .promptFeedback.blockReason // "unknown"' response.json)
               ;;
-            openai|openrouter)
+            openai|openrouter|nim)
               review=$(jq -r '.choices[0].message.content // empty' response.json)
               reason=$(jq -r '.choices[0].finish_reason // "unknown"' response.json)
               ;;
@@ -332,7 +346,7 @@ jobs:
             exit 0
           fi
 
-          if [ "$PROVIDER" = "openai" ] || [ "$PROVIDER" = "openrouter" ]; then
+          if [ "$PROVIDER" = "openai" ] || [ "$PROVIDER" = "openrouter" ] || [ "$PROVIDER" = "nim" ]; then
             { printf '## %s Code Review (%s)\n\n' "$LABEL" "$used_model"; printf '%s\n' "$review"; } > review_report.md
           else
             { printf '## %s Code Review\n\n' "$LABEL"; printf '%s\n' "$review"; } > review_report.md
@@ -349,6 +363,7 @@ jobs:
             gemini) LABEL="Gemini" ;;
             openai) LABEL="GLM" ;;
             openrouter) LABEL="OpenRouter" ;;
+            nim) LABEL="NVIDIA NIM" ;;
             *) LABEL="$PROVIDER" ;;
           esac
           { printf '## %s Code Review\n\n:information_source: %s\n' "$LABEL" "$SKIP_REASON"; } > review_report.md

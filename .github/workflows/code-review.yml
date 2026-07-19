@@ -17,3 +17,10 @@ jobs:
       models: tencent/hy3:free anthropic/claude-3.5-haiku google/gemini-flash-1.5
     secrets:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+  nim-review:
+    uses: ./.github/workflows/gemini-reviewer.yml
+    with:
+      provider: nim
+      model: z-ai/glm-5.2
+    secrets:
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
