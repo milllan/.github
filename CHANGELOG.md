@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-07-19
+
+### Added
+- **`nim` provider (NVIDIA NIM).** A fourth first-class provider, OpenAI-compatible, defaulting to `https://integrate.api.nvidia.com/v1/chat/completions`. Uses the new `NVIDIA_API_KEY` secret and its own `nim_endpoint` input (separate from `openai_endpoint`/`openrouter_endpoint`). Model names follow NIM's `owner/model` scheme (e.g. `z-ai/glm-5.2`). Comment heading becomes `## NVIDIA NIM Code Review (z-ai/glm-5.2)` so you can see which model reviewed. Shares the OpenAI-compatible request/response path and the `models` fallback list.
+- Callers can now run four parallel reviewers (Gemini + GLM + OpenRouter + NVIDIA NIM) for four independent reviews per PR.
+
 ## [1.5.0] - 2026-07-19
 
 ### Added
