@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-19
+
+### Changed
+- **Default `openai_endpoint` switched to Z.ai's Coding Plan endpoint** (`api.z.ai/api/coding/paas/v4/chat/completions`). Z.ai has two endpoints: the Coding Plan (subscription, what most users have) and the pay-per-token API (`/api/paas/v4/`, requires a positive credit balance which defaults to $0). The Coding Plan endpoint works with subscription keys; the old default returned `429 insufficient balance` for users without API credits.
+- **Smart retry for 429s.** The retry loop now inspects the error body: permanent 429s (`insufficient balance`, `quota exceeded`, `invalid key`) fail fast instead of burning ~100s on backoff. Only transient 429s (rate-limit) and 502/503/504 are retried.
+
 ## [1.3.0] - 2026-07-18
 
 ### Added
