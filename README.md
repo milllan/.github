@@ -35,7 +35,7 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 |-------|---------|-------------|
 | `provider` | `gemini` | `gemini` or `openai` (OpenAI-compatible endpoint). |
 | `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`). |
-| `openai_endpoint` | `https://api.z.ai/api/paas/v4/chat/completions` | OpenAI-compatible endpoint. Ignored unless `provider=openai`. Also works for OpenRouter, DeepSeek, OpenAI. |
+| `openai_endpoint` | `https://api.z.ai/api/coding/paas/v4/chat/completions` | OpenAI-compatible endpoint. Defaults to Z.ai's **Coding Plan** (subscription). Use `https://api.z.ai/api/paas/v4/chat/completions` for pay-per-token API credits. Also works for OpenRouter, DeepSeek, OpenAI. |
 | `max_diff_chars` | `250000` | Skip review if the raw diff exceeds this. `0` disables the limit. |
 
 ## Secrets

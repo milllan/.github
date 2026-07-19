@@ -70,7 +70,9 @@ To add a third provider whose API differs from both (e.g. direct Anthropic), add
 - Reusable workflows cannot be triggered by `workflow_dispatch` directly (`startup_failure`). Manual re-review works by pushing an empty commit to the PR branch via a separate `runs-on` job in the caller.
 - Branch names with slashes (e.g. `feat/foo`) must be URL-encoded (`%2F`) when calling the `git/refs/heads/` API.
 - `max_diff_chars` defaults to 250000 — large but finite. Very large PRs are skipped with a visible comment.
-- The Gemini free-tier API key has `limit: 0` quota for Pro models (2.5-pro, 3.x-pro-preview) — only Flash models work without billing. GLM via Z.ai has its own quota model.
+- The Gemini free-tier API key has `limit: 0` quota for Pro models (2.5-pro, 3.x-pro-preview) — only Flash models work without billing.
+- **Z.ai has TWO endpoints.** The **Coding Plan** (subscription, what most users have) is at `https://api.z.ai/api/coding/paas/v4/chat/completions` — this is the default. The **pay-per-token API** is at `https://api.z.ai/api/paas/v4/chat/completions` and requires a positive credit balance ($0 by default → `429 insufficient balance`). The Coding Plan key works on both endpoints, but the API-credits key only works on the second. The default `openai_endpoint` is the Coding Plan one.
+- The retry logic distinguishes transient `429`/`5xx` (retried with backoff) from permanent `429`s like "insufficient balance" / "quota exceeded" (fail fast).
 
 ## Files
 

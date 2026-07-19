@@ -17,9 +17,9 @@ on:
         type: string
         default: "gemini-3.5-flash"
       openai_endpoint:
-        description: "OpenAI-compatible chat-completions endpoint. Ignored unless provider=openai. Defaults to Z.ai."
+        description: "OpenAI-compatible chat-completions endpoint. Ignored unless provider=openai. Defaults to Z.ai's Coding Plan endpoint (subscription); use https://api.z.ai/api/paas/v4/chat/completions for pay-per-token API credits."
         type: string
-        default: "https://api.z.ai/api/paas/v4/chat/completions"
+        default: "https://api.z.ai/api/coding/paas/v4/chat/completions"
       max_diff_chars:
         description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit."
         type: number
@@ -158,7 +158,10 @@ jobs:
           esac
 
           # ---- Call the provider endpoint with retry on transient errors ----
-          # 429/502/503/504 get exponential backoff; 4xx fail immediately.
+          # 502/503/504 (overload) and 429 (rate limit) get exponential backoff.
+          # But a 429 whose body indicates a *permanent* condition (insufficient
+          # balance, zero quota, invalid key) is not retried — retrying just
+          # wastes ~100s before posting the same failure.
           max_attempts=4
           attempt=1
           http_code=""
@@ -181,17 +184,34 @@ jobs:
             if [ "$http_code" = "200" ]; then
               break
             fi
+            # Only retry if the error is plausibly transient.
+            retry=no
             case "$http_code" in
-              429|502|503|504)
-                wait_s=$((10 * attempt))
-                echo "HTTP $http_code on attempt $attempt/$max_attempts — retrying in ${wait_s}s..."
-                sleep "$wait_s"
-                attempt=$((attempt + 1))
+              502|503|504)
+                retry=yes
                 ;;
-              *)
-                break
+              429)
+                # Peek at the body: permanent 429s mention balance/quota/billing/key.
+                body_hint=$(jq -r '(.error.message // .error // "") | ascii_downcase' response.json 2>/dev/null || echo "")
+                case "$body_hint" in
+                  *balance*|*recharge*|*quota*|*billing*|*limit*:*\ 0*|*invalid*key*|*unauthorized*)
+                    echo "HTTP 429 with permanent cause (\"$body_hint\") — not retrying."
+                    break
+                    ;;
+                  *)
+                    retry=yes
+                    ;;
+                esac
                 ;;
             esac
+            if [ "$retry" = "yes" ]; then
+              wait_s=$((10 * attempt))
+              echo "HTTP $http_code on attempt $attempt/$max_attempts — retrying in ${wait_s}s..."
+              sleep "$wait_s"
+              attempt=$((attempt + 1))
+            else
+              break
+            fi
           done
 
           if [ "$http_code" != "200" ]; then
