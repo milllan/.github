@@ -9,15 +9,15 @@ on:
   workflow_call:
     inputs:
       provider:
-        description: "Review backend: 'gemini' (Google Generative Language API), 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, DeepSeek), 'openrouter' (OpenRouter, OpenAI-compatible), or 'nim' (NVIDIA NIM, OpenAI-compatible, e.g. z-ai/glm-5.2)."
+        description: "Review backend: 'gemini' (Google Generative Language API), 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, DeepSeek), 'openrouter' (OpenRouter, OpenAI-compatible), 'nim' (NVIDIA NIM, OpenAI-compatible, e.g. z-ai/glm-5.2), or 'zen' (OpenCode Zen gateway, OpenAI-compatible, e.g. deepseek-v4-flash-free, mimo-v2.5-free)."
         type: string
         default: "gemini"
       model:
-        description: "Model name for the chosen provider (e.g. gemini-3.5-flash, glm-5.2, tencent/hy3:free, z-ai/glm-5.2). For provider 'openai'/'openrouter'/'nim' this is the first model tried; see 'models' for a fallback list."
+        description: "Model name for the chosen provider (e.g. gemini-3.5-flash, glm-5.2, tencent/hy3:free, z-ai/glm-5.2, deepseek-v4-flash-free). For provider 'openai'/'openrouter'/'nim'/'zen' this is the first model tried; see 'models' for a fallback list."
         type: string
         default: "gemini-3.5-flash"
       models:
-        description: "Space- or comma-separated fallback list of models for provider 'openai'/'openrouter'/'nim'. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. If empty, only 'model' is used."
+        description: "Space- or comma-separated fallback list of models for provider 'openai'/'openrouter'/'nim'/'zen'. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. If empty, only 'model' is used."
         type: string
         default: ""
       openai_endpoint:
@@ -32,6 +32,10 @@ on:
         description: "Chat-completions endpoint for provider 'nim'. Defaults to https://integrate.api.nvidia.com/v1/chat/completions (NVIDIA NIM). Override only if you self-host or proxy NIM."
         type: string
         default: "https://integrate.api.nvidia.com/v1/chat/completions"
+      zen_endpoint:
+        description: "Chat-completions endpoint for provider 'zen'. Defaults to https://opencode.ai/zen/v1/chat/completions (OpenCode Zen gateway). Override only if you self-host or proxy Zen."
+        type: string
+        default: "https://opencode.ai/zen/v1/chat/completions"
       max_diff_chars:
         description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit."
         type: number
@@ -47,6 +51,9 @@ on:
         required: false
       NVIDIA_API_KEY:
         description: "API key for the nim provider (NVIDIA NIM, https://build.nvidia.com). Get one at https://build.nvidia.com/settings/api-keys."
+        required: false
+      OPENCODE_API_KEY:
+        description: "API key for the zen provider (OpenCode Zen gateway, https://opencode.ai). Get one at https://opencode.ai/auth or https://opencode.ai/zen."
         required: false
 
 permissions:
@@ -138,10 +145,12 @@ jobs:
           OPENAI_ENDPOINT: ${{ inputs.openai_endpoint }}
           OPENROUTER_ENDPOINT: ${{ inputs.openrouter_endpoint }}
           NIM_ENDPOINT: ${{ inputs.nim_endpoint }}
+          ZEN_ENDPOINT: ${{ inputs.zen_endpoint }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: |
           set +e
 
@@ -185,6 +194,11 @@ jobs:
               ENDPOINT="${NIM_ENDPOINT:-https://integrate.api.nvidia.com/v1/chat/completions}"
               KEY="$NVIDIA_API_KEY"
               ;;
+            zen)
+              LABEL="OpenCode Zen"
+              ENDPOINT="${ZEN_ENDPOINT:-https://opencode.ai/zen/v1/chat/completions}"
+              KEY="$OPENCODE_API_KEY"
+              ;;
             *)
               LABEL="$PROVIDER"
               ENDPOINT=""
@@ -220,7 +234,7 @@ jobs:
                   generationConfig: { temperature: 0.2 }
                 }' > body.json
                 ;;
-              openai|openrouter|nim)
+              openai|openrouter|nim|zen)
                 jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
                   model: $model,
                   messages: [
@@ -260,7 +274,7 @@ jobs:
                     -H 'Content-Type: application/json' \
                     -d @body.json)
                   ;;
-                openai|openrouter|nim)
+                openai|openrouter|nim|zen)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
                     --connect-timeout 10 --max-time 120 \
                     -X POST "${ENDPOINT}" \
@@ -346,8 +360,14 @@ jobs:
               review=$(jq -r '.candidates[0].content.parts[0].text // empty' response.json)
               reason=$(jq -r '.candidates[0].finishReason // .promptFeedback.blockReason // "unknown"' response.json)
               ;;
-            openai|openrouter|nim)
+            openai|openrouter|nim|zen)
               review=$(jq -r '.choices[0].message.content // empty' response.json)
+              # Reasoning models (e.g. mimo-v2.5-free) may return content:null
+              # with the text under .reasoning — fall back to that so the
+              # reviewer still produces a comment.
+              if [ -z "$review" ]; then
+                review=$(jq -r '.choices[0].message.reasoning // empty' response.json)
+              fi
               reason=$(jq -r '.choices[0].finish_reason // "unknown"' response.json)
               ;;
           esac
@@ -358,7 +378,7 @@ jobs:
             exit 0
           fi
 
-          if [ "$PROVIDER" = "openai" ] || [ "$PROVIDER" = "openrouter" ] || [ "$PROVIDER" = "nim" ]; then
+          if [ "$PROVIDER" = "openai" ] || [ "$PROVIDER" = "openrouter" ] || [ "$PROVIDER" = "nim" ] || [ "$PROVIDER" = "zen" ]; then
             { printf '## %s Code Review (%s)\n\n' "$LABEL" "$used_model"; printf '%s\n' "$review"; } > review_report.md
           else
             { printf '## %s Code Review\n\n' "$LABEL"; printf '%s\n' "$review"; } > review_report.md
@@ -376,6 +396,7 @@ jobs:
             openai) LABEL="GLM" ;;
             openrouter) LABEL="OpenRouter" ;;
             nim) LABEL="NVIDIA NIM" ;;
+            zen) LABEL="OpenCode Zen" ;;
             *) LABEL="$PROVIDER" ;;
           esac
           { printf '## %s Code Review\n\n:information_source: %s\n' "$LABEL" "$SKIP_REASON"; } > review_report.md

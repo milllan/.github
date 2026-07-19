@@ -16,6 +16,7 @@ Current pinned HEAD: see [`commits/main`](https://github.com/milllan/.github/com
    - `ZAI_API_KEY` if using the GLM job (get from https://z.ai/apikey) — forwarded as `OPENAI_API_KEY` in the caller
    - `OPENROUTER_API_KEY` if using the OpenRouter job (get from https://openrouter.ai/keys) — forwarded as `OPENROUTER_API_KEY` in the caller
    - `NVIDIA_API_KEY` if using the NVIDIA NIM job (get from https://build.nvidia.com/settings/api-keys) — forwarded as `NVIDIA_API_KEY` in the caller
+   - `OPENCODE_API_KEY` if using the OpenCode Zen job (get from https://opencode.ai/auth) — forwarded as `OPENCODE_API_KEY` in the caller. Free models (e.g. `deepseek-v4-flash-free`, `mimo-v2.5-free`) need no billing.
 3. The repo's default branch must allow Actions to post comments (`pull-requests: write` is set in the caller).
 4. The reusable workflow's repo (`milllan/.github`) must be **public** — GitHub requires this for reusable workflows called across repos.
 
@@ -59,6 +60,14 @@ jobs:
     uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
     with: { provider: nim, model: z-ai/glm-5.2 }
     secrets: { NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }} }
+  zen-deepseek-review:
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
+    with: { provider: zen, model: deepseek-v4-flash-free }
+    secrets: { OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }} }
+  zen-mimo-review:
+    uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
+    with: { provider: zen, model: mimo-v2.5-free }
+    secrets: { OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }} }
 ```
 
 ## Bumping the SHA
@@ -77,10 +86,11 @@ The provider coupling is isolated to the "Run Review" step:
 - **openai**: `{openai_endpoint}` (default Z.ai Coding Plan) with `Authorization: Bearer`, response `.choices[0].message.content`
 - **openrouter**: `{openrouter_endpoint}` (default `https://openrouter.ai/api/v1/chat/completions`) with `Authorization: Bearer ${OPENROUTER_API_KEY}`, same response shape as openai
 - **nim**: `{nim_endpoint}` (default `https://integrate.api.nvidia.com/v1/chat/completions`, NVIDIA NIM) with `Authorization: Bearer ${NVIDIA_API_KEY}`, same response shape as openai. Model names follow NIM's `owner/model` scheme, e.g. `z-ai/glm-5.2`.
+- **zen**: `{zen_endpoint}` (default `https://opencode.ai/zen/v1/chat/completions`, OpenCode Zen gateway) with `Authorization: Bearer ${OPENCODE_API_KEY}`, same response shape as openai. Free models include `deepseek-v4-flash-free` and `mimo-v2.5-free`. Reasoning-only models (e.g. `mimo-v2.5-free`) return `content:null`; the workflow falls back to `.choices[0].message.reasoning` so they still post a review.
 
-The OpenAI-compatible branch (`openai`/`openrouter`/`nim`) supports a **model fallback list**: the `models` input (space/comma-separated) is tried in order; if a model returns HTTP 400/404/422 (removed/deprecated) the next is used. When `models` is set it fully overrides the single `model` input (which is only used when `models` is empty); `models` is ignored for `gemini`. Permanent 401/403 or balance/quota 429 fail fast (shared key). The comment heading names the model that actually reviewed, e.g. `## OpenRouter Code Review (tencent/hy3:free)` or `## NVIDIA NIM Code Review (z-ai/glm-5.2)`.
+The OpenAI-compatible branch (`openai`/`openrouter`/`nim`/`zen`) supports a **model fallback list**: the `models` input (space/comma-separated) is tried in order; if a model returns HTTP 400/404/422 (removed/deprecated) the next is used. When `models` is set it fully overrides the single `model` input (which is only used when `models` is empty); `models` is ignored for `gemini`. Permanent 401/403 or balance/quota 429 fail fast (shared key). The comment heading names the model that actually reviewed, e.g. `## OpenRouter Code Review (tencent/hy3:free)`, `## NVIDIA NIM Code Review (z-ai/glm-5.2)`, or `## OpenCode Zen Code Review (deepseek-v4-flash-free)`.
 
-To add a provider whose API differs from both (e.g. direct Anthropic), add a new branch to the `case $PROVIDER` in the "Run Review" step and a new input default + secret. OpenAI-compatible providers (OpenRouter, NVIDIA NIM, DeepSeek, Mistral, Groq) need no code change — just a different `*_endpoint` and key.
+To add a provider whose API differs from both (e.g. direct Anthropic), add a new branch to the `case $PROVIDER` in the "Run Review" step and a new input default + secret. OpenAI-compatible providers (OpenRouter, NVIDIA NIM, OpenCode Zen, DeepSeek, Mistral, Groq) need no code change — just a different `*_endpoint` and key.
 
 ## Known limitations / gotchas
 
