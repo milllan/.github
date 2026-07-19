@@ -144,8 +144,13 @@ jobs:
             jq -r '.error.message // .error // "(no error body)"' response.json 2>/dev/null || head -c 500 response.json
           }
           fail_fast() {  # $1=http_code $2=attempt $3=msg
-            printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): %s\n' "$LABEL" "$1" "$2" "$3" > review_report.md
-            echo "status=error" >> $GITHUB_OUTPUT
+            # Emit msg with a separate '%s' printf so any '%' in the message is
+            # not interpreted as a format specifier.
+            {
+              printf '## %s Code Review\n\n:warning: API returned HTTP %s after %s attempt(s): ' "$LABEL" "$1" "$2"
+              printf '%s\n' "$3"
+            } > review_report.md
+            echo "status=error" >> "$GITHUB_OUTPUT"
             exit 0
           }
 
