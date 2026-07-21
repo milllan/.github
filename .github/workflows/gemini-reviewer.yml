@@ -234,7 +234,7 @@ jobs:
                   generationConfig: { temperature: 0.2 }
                 }' > body.json
                 ;;
-              openai|openrouter|nim|zen)
+              openai|openrouter|zen)
                 jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
                   model: $model,
                   messages: [
@@ -242,6 +242,21 @@ jobs:
                     { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
                   ],
                   temperature: 0.2
+                }' > body.json
+                ;;
+              nim)
+                # NVIDIA NIM "thinking" models (e.g. deepseek-v4-pro, minimax-m3)
+                # require chat_template_kwargs.thinking=true per the official
+                # build.nvidia.com example; without it some models 404 or refuse
+                # to generate. Harmless for non-thinking NIM models (ignored).
+                jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
+                  model: $model,
+                  messages: [
+                    { role: "system", content: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." },
+                    { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
+                  ],
+                  temperature: 0.2,
+                  chat_template_kwargs: { thinking: true }
                 }' > body.json
                 ;;
               *)
