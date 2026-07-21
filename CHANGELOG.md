@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-07-21
+
+### Changed
+- **Per-model NIM dispatch.** NIM models use one of three thinking schemas, and there is no single magic flag. The earlier blanket `chat_template_kwargs: { thinking: true }` (from v1.7.1) was wrong twice over: the correct GLM key is `enable_thinking` (so GLM had silently been running non-thinking), and most NIM models take no thinking params at all. The `nim` body builder now dispatches per model name:
+  - `z-ai/glm-5.2` → `chat_template_kwargs: { enable_thinking: true, clear_thinking: true }` (thorough reviews, reasoning trace stripped from the comment)
+  - `thinkingmachines/inkling` → `reasoning_effort: "high"` (OpenAI o1-style top-level field)
+  - everything else (`moonshotai/kimi-k2.6`, `minimaxai/minimax-m3`, `deepseek-ai/*`) → plain body, no extra fields
+  Verified locally against `jq`'s `*` merge: each schema produces exactly the right keys, no null injections.
+
+### Notes
+- `deepseek-ai/deepseek-v4-pro` is in the NIM catalog but the runtime endpoint has consistently returned HTTP 404 with empty body across every PR run on every repo that tried it — never produced a review. The 404 is unrelated to request params (account-entitlement or backend-deployment issue). Recommended replacement: `moonshotai/kimi-k2.6` (works today, plain body, no thinking params).
+
+## [1.7.1] - 2026-07-20
+
+### Fixed
+- Retried HTTP `000` (curl-level failures: DNS, connection refused, timeout) the same way as `502/503/504`, instead of failing fast. Affected all providers intermittently.
+
+### Changed
+- **(Superseded by 1.8.0)** Sent `chat_template_kwargs: { thinking: true }` for all NIM requests per the build.nvidia.com example. This was based on a misreading — the correct GLM key is `enable_thinking`, and the blanket application was wrong. Replaced by per-model dispatch in 1.8.0.
+
 ## [1.7.0] - 2026-07-19
 
 ### Added
