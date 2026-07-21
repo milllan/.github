@@ -64,6 +64,16 @@ jobs:
   review:
     name: ${{ inputs.provider }} review (${{ inputs.model }})
     runs-on: ubuntu-latest
+    # GitHub does NOT support `timeout-minutes` on the *caller* job that uses
+    # `uses:` to invoke a reusable workflow (see community/discussions/50481) —
+    # setting it there silently rejects the workflow as a "file issue" with no
+    # error message. It must live here on the called job. Hardcoded rather than
+    # an expression because timeout-minutes only accepts a literal number
+    # (actions/runner#1555). 15min is the ceiling: per-request curl --max-time
+    # is 900s below, so a single attempt can finish a large thinking review;
+    # the retry loop fits inside this budget; and a hung provider still gets
+    # killed in 15min rather than burning the 6h Actions cap.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout Code
