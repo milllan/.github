@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-07-21
+
+### Changed
+- **Per-model NIM dispatch expanded and verified by direct probes.** All thinking-param schemas are now backed by direct `curl` tests against `integrate.api.nvidia.com` with a real key (2026-07-21), not by reading NVIDIA docs (which disagree with the deployed runtime on several models). The `nim)` branch of `build_body()` now handles six verified-working models:
+  - `z-ai/glm-5.2` → `chat_template_kwargs: { enable_thinking: true, clear_thinking: true }`
+  - `minimaxai/minimax-m3` → `chat_template_kwargs: { thinking_mode: "enabled" }`
+  - `thinkingmachines/inkling` → top-level `reasoning_effort: "high"`
+  - `deepseek-ai/deepseek-v4-pro` and `deepseek-ai/deepseek-v4-flash` → `chat_template_kwargs: { thinking: true }`
+  - `stepfun-ai/step-3.7-flash` → `chat_template_kwargs: { thinking: true }` (**required** — plain body hangs)
+- **Per-request curl `--max-time` raised from 120s to 300s.** Thinking-mode responses are much slower than non-thinking; the old 2-minute cutoff caused HTTP 000 (curl-level) on thinking requests that legitimately take 3-5 minutes on larger diffs. Pair with `timeout-minutes: 15` on caller jobs (next caller bump) so a thinking model still has room for 2-3 retries within the job budget.
+- **Removed dead language-detection steps.** The `Detect Languages` + four `Setup X` (Node/Python/Go/Rust) steps were inherited from the original `agy` CLI design, which needed runtimes installed. The current direct-curl approach uses neither; the steps were installing toolchains that no later step reads. Removes ~25s per job and 4 unused actions from the dependency graph.
+- **Job name now reflects provider + model.** Was hardcoded `Gemini PR Review` for every job, which made a multi-reviewer PR's Action run page unreadable. Now `${{ inputs.provider }} review (${{ inputs.model }})` — e.g. `nim review (z-ai/glm-5.2)`.
+
+### Corrected (earlier wrong claims)
+- `deepseek-ai/deepseek-v4-pro` is **not** broken. Earlier changelogs (1.8.0 notes) called it a "404 in every PR run, never produced a review" based on CI-only evidence. Direct probes show it returns HTTP 200 in ~10s with a real key. The CI 404s were transient backend flakes, not a model or param issue. Re-added to the per-model dispatch with `chat_template_kwargs.thinking: true`.
+- `minimaxai/minimax-m3` thinking mode **is** achievable. An earlier draft of 1.8.1 claimed `thinking_mode: "enabled"` hangs on the deployed runtime; that conclusion came from a CI test that was itself flaky (HTTP 000 from runner→NIM networking). Direct probes confirm `thinking_mode: "enabled"` returns HTTP 200 in ~20s.
+
+### Verified broken (unchanged, but now with confirmed cause)
+- `moonshotai/kimi-k2.6` → HTTP 404 `Function '...': Not found for account '9WY0...'`. The error body explicitly names the account, confirming this is an entitlement issue (this NVIDIA account doesn't have kimi access), not a model-deployment issue. Both available keys map to the same account, so swapping keys doesn't help.
+
+### Docs
+- AGENTS.md and README.md updated with a verified NIM thinking-schemas table (replaces the earlier "three schemas" / "four schemas" drafts that mixed correct and incorrect claims).
+- New "NIM availability is region/account-dependent" gotcha documents the IP-vs-CI divergence on GLM-5.2 and the entitlement-gated kimi-k2.6, with explicit instructions to **probe directly before wiring a new model** (CI-only verification is unreliable).
+- Stale "three providers" count fixed (now five: gemini, openai, openrouter, nim, zen).
+
 ## [1.8.0] - 2026-07-21
 
 ### Changed
