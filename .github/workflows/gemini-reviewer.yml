@@ -62,7 +62,7 @@ permissions:
 
 jobs:
   review:
-    name: Gemini PR Review
+    name: ${{ inputs.provider }} review (${{ inputs.model }})
     runs-on: ubuntu-latest
 
     steps:
@@ -70,46 +70,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Full history so the base ref is available for an accurate diff.
-
-      # Language detection is retained so later steps (or future tools) can
-      # install runtimes. Gemini itself does not need them to review a diff.
-      - name: Detect Languages
-        id: detect-languages
-        run: |
-          if [ -f "package.json" ] || [ -f "package-lock.json" ]; then
-            echo "has_node=true" >> $GITHUB_OUTPUT
-          fi
-          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
-            echo "has_python=true" >> $GITHUB_OUTPUT
-          fi
-          if [ -f "go.mod" ]; then
-            echo "has_go=true" >> $GITHUB_OUTPUT
-          fi
-          if [ -f "Cargo.toml" ]; then
-            echo "has_rust=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Setup Node.js
-        if: steps.detect-languages.outputs.has_node == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup Python
-        if: steps.detect-languages.outputs.has_python == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Setup Go
-        if: steps.detect-languages.outputs.has_go == 'true'
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: Setup Rust
-        if: steps.detect-languages.outputs.has_rust == 'true'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Generate PR Diff
         id: pr-diff
@@ -245,23 +205,41 @@ jobs:
                 }' > body.json
                 ;;
               nim)
-                # NVIDIA NIM models use one of three thinking schemas — there is
-                # no single magic flag. Per build.nvidia.com's own examples:
-                #   - z-ai/glm-5.2            -> chat_template_kwargs.enable_thinking
-                #                              (the earlier "thinking: true" was a
-                #                               wrong key name; NIM silently ignored
-                #                               it, so GLM ran non-thinking).
-                #   - thinkingmachines/inkling -> top-level "reasoning_effort"
-                #   - everything else         -> plain body, no extra fields
-                #                              (kimi-k2.6, minimax-m3, deepseek-*).
-                # Injecting the wrong schema is harmless (NIM ignores unknown keys)
-                # but never enables thinking, so we dispatch per model name.
+                # NVIDIA NIM models use one of several thinking schemas — there is
+                # no single magic flag, and NIM silently ignores unknown keys (so
+                # the wrong flag is silently a no-op, never an error).
+                #
+                # Schemas below are verified by DIRECT curl probes against
+                # integrate.api.nvidia.com with a real key (2026-07-21), not by
+                # reading docs alone. NIM's docs and its deployed runtime disagree
+                # on several models — see AGENTS.md "NIM thinking schemas" and
+                # "Known limitations / gotchas". CI-only verification is
+                # unreliable because GitHub runners and home/office IPs hit
+                # different NIM backends with different model availability.
+                #
+                # Verified schemas (all return HTTP 200 with thinking ON):
+                #   z-ai/glm-5.2                  -> chat_template_kwargs.enable_thinking
+                #   minimaxai/minimax-m3          -> chat_template_kwargs.thinking_mode:"enabled"
+                #   thinkingmachines/inkling      -> top-level reasoning_effort:"high"
+                #   deepseek-ai/deepseek-v4-pro   -> chat_template_kwargs.thinking:true
+                #   deepseek-ai/deepseek-v4-flash -> chat_template_kwargs.thinking:true
+                #   stepfun-ai/step-3.7-flash     -> chat_template_kwargs.thinking:true (REQUIRED — plain body hangs)
+                #
+                # Verified broken (as of 2026-07-21):
+                #   moonshotai/kimi-k2.6          -> HTTP 404 "Not found for account" (entitlement, not param)
+                #
                 case "$MODEL" in
                   z-ai/glm-5.2)
                     nim_extras='{"chat_template_kwargs":{"enable_thinking":true,"clear_thinking":true}}'
                     ;;
+                  minimaxai/minimax-m3)
+                    nim_extras='{"chat_template_kwargs":{"thinking_mode":"enabled"}}'
+                    ;;
                   thinkingmachines/inkling)
                     nim_extras='{"reasoning_effort":"high"}'
+                    ;;
+                  deepseek-ai/deepseek-v4-pro|deepseek-ai/deepseek-v4-flash|stepfun-ai/step-3.7-flash)
+                    nim_extras='{"chat_template_kwargs":{"thinking":true}}'
                     ;;
                   *)
                     nim_extras='{}'
@@ -305,14 +283,14 @@ jobs:
               case "$PROVIDER" in
                 gemini)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
-                    --connect-timeout 10 --max-time 120 \
+                    --connect-timeout 10 --max-time 300 \
                     -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}" \
                     -H 'Content-Type: application/json' \
                     -d @body.json)
                   ;;
                 openai|openrouter|nim|zen)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
-                    --connect-timeout 10 --max-time 120 \
+                    --connect-timeout 10 --max-time 300 \
                     -X POST "${ENDPOINT}" \
                     -H "Authorization: Bearer ${KEY}" \
                     -H 'Content-Type: application/json' \

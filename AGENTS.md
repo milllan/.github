@@ -4,7 +4,7 @@ This repo (`milllan/.github`) hosts a reusable GitHub Actions workflow for AI co
 
 ## The product
 
-`/.github/workflows/gemini-reviewer.yml` — a `workflow_call`-only reusable workflow. It does NOT run on its own; it is invoked by a caller workflow in another repo. Despite the filename, it supports three providers: Gemini, any OpenAI-compatible endpoint (default Z.ai GLM), and OpenRouter (OpenAI-compatible, with an automatic model fallback list).
+`/.github/workflows/gemini-reviewer.yml` — a `workflow_call`-only reusable workflow. It does NOT run on its own; it is invoked by a caller workflow in another repo. Despite the filename, it supports five providers: Gemini, any OpenAI-compatible endpoint (default Z.ai GLM), OpenRouter (OpenAI-compatible, with an automatic model fallback list), NVIDIA NIM (OpenAI-compatible), and OpenCode Zen (OpenAI-compatible).
 
 Current pinned HEAD: see [`commits/main`](https://github.com/milllan/.github/commits/main). Always pin callers to a specific SHA.
 
@@ -89,13 +89,38 @@ The provider coupling is isolated to the "Run Review" step:
 
 ### NIM thinking schemas (per-model)
 
-NIM models do **not** share a single "thinking" flag — the build.nvidia.com examples differ per model, and NIM silently ignores unknown keys (so the wrong flag is harmless but does nothing). The workflow's `nim` body builder dispatches per model name:
+NIM models do **not** share a single "thinking" flag — each model picks its own schema, and NIM silently ignores unknown keys (so the wrong flag is silently a no-op, never an error). The workflow's `nim` body builder dispatches per model name. The schemas below are **verified by direct curl probes** against `integrate.api.nvidia.com/v1/chat/completions` with a real key (2026-07-21), not just by reading docs — NIM's docs and its deployed runtime disagree on several models.
 
-- **Plain body** (no extra fields): `moonshotai/kimi-k2.6`, `minimaxai/minimax-m3`, `deepseek-ai/*`, and anything not listed below.
-- **`chat_template_kwargs: { enable_thinking: true, clear_thinking: true }`**: `z-ai/glm-5.2`. (The correct GLM key is `enable_thinking`, **not** `thinking`; `clear_thinking: true` strips the reasoning trace so only the final review lands in the PR comment.)
-- **`reasoning_effort: "high"`** (top-level, OpenAI o1-style): `thinkingmachines/inkling`.
+**Verified working (HTTP 200 with thinking ON):**
 
-To add a new NIM model, identify which of the three schemas it uses from its build.nvidia.com example, then add a `case` to the `nim)` branch of `build_body()` in the workflow. Don't blanket-apply any single flag — that was the v1.7.1 bug.
+| Model | Schema | Notes |
+|-------|--------|-------|
+| `z-ai/glm-5.2` | `chat_template_kwargs: { enable_thinking: true, clear_thinking: true }` | `clear_thinking: true` strips the reasoning trace so only the final review lands in the PR comment. **Hangs intermittently from non-CI IPs** — see gotchas below. |
+| `minimaxai/minimax-m3` | `chat_template_kwargs: { thinking_mode: "enabled" }` | Documented at [docs.api.nvidia.com/nim/reference/minimaxai-minimax-m3-infer](https://docs.api.nvidia.com/nim/reference/minimaxai-minimax-m3-infer). Plain body also works (adaptive mode). |
+| `thinkingmachines/inkling` | top-level `reasoning_effort: "high"` | OpenAI o1-style. Plain body also works. |
+| `deepseek-ai/deepseek-v4-pro` | `chat_template_kwargs: { thinking: true }` | Plain body also works. |
+| `deepseek-ai/deepseek-v4-flash` | `chat_template_kwargs: { thinking: true }` | Plain body also works. |
+| `stepfun-ai/step-3.7-flash` | `chat_template_kwargs: { thinking: true }` | **Required** — plain body hangs. The only model in the lineup that REQUIRES a thinking flag to respond at all. |
+
+**Verified broken (as of 2026-07-21):**
+
+| Model | Failure | Cause |
+|-------|---------|-------|
+| `moonshotai/kimi-k2.6` | HTTP 404 `Function '...': Not found for account '9WY0...'` | Account entitlement — this account doesn't have kimi access. Not fixable without changing the NVIDIA account tier. |
+
+To add a new NIM model:
+1. **Probe it directly first** (not just CI — CI verification is unreliable because GitHub runners hit different NIM backends). Save a key to `~/.config/shell/.nimrc`, then:
+   ```bash
+   source ~/.config/shell/.nimrc
+   curl -sS --max-time 30 -X POST https://integrate.api.nvidia.com/v1/chat/completions \
+     -H "Authorization: Bearer $NVIDIA_API_KEY" -H "Content-Type: application/json" \
+     -d '{"model":"<owner>/<model>","messages":[{"role":"user","content":"hi"}],"chat_template_kwargs":{"thinking":true}}'
+   ```
+   Try `thinking`, `enable_thinking`, `thinking_mode:"enabled"`, `reasoning_effort:"high"`, and plain body — pick whichever returns HTTP 200 with content.
+2. Add a `case` to the `nim)` branch of `build_body()` in the workflow with the verified schema.
+3. Document the result in the tables above.
+
+Don't blanket-apply any single flag — that was the v1.7.1 bug (wrong key name for GLM, no-op for everything else).
 - **zen**: `{zen_endpoint}` (default `https://opencode.ai/zen/v1/chat/completions`, OpenCode Zen gateway) with `Authorization: Bearer ${OPENCODE_API_KEY}`, same response shape as openai. Free models include `deepseek-v4-flash-free` and `mimo-v2.5-free`. Reasoning-only models (e.g. `mimo-v2.5-free`) return `content:null`; the workflow falls back to `.choices[0].message.reasoning` so they still post a review.
 
 The OpenAI-compatible branch (`openai`/`openrouter`/`nim`/`zen`) supports a **model fallback list**: the `models` input (space/comma-separated) is tried in order; if a model returns HTTP 400/404/422 (removed/deprecated) the next is used. When `models` is set it fully overrides the single `model` input (which is only used when `models` is empty); `models` is ignored for `gemini`. Permanent 401/403 or balance/quota 429 fail fast (shared key). The comment heading names the model that actually reviewed, e.g. `## OpenRouter Code Review (tencent/hy3:free)`, `## NVIDIA NIM Code Review (z-ai/glm-5.2)`, or `## OpenCode Zen Code Review (deepseek-v4-flash-free)`.
@@ -110,7 +135,13 @@ To add a provider whose API differs from both (e.g. direct Anthropic), add a new
 - The Gemini free-tier API key has `limit: 0` quota for Pro models (2.5-pro, 3.x-pro-preview) — only Flash models work without billing.
 - **Z.ai has TWO endpoints.** The **Coding Plan** (subscription, what most users have) is at `https://api.z.ai/api/coding/paas/v4/chat/completions` — this is the default. The **pay-per-token API** is at `https://api.z.ai/api/paas/v4/chat/completions` and requires a positive credit balance ($0 by default → `429 insufficient balance`). The Coding Plan key works on both endpoints, but the API-credits key only works on the second. The default `openai_endpoint` is the Coding Plan one.
 - The retry logic distinguishes transient `429`/`5xx` (retried with backoff) from permanent `429`s like "insufficient balance" / "quota exceeded" (fail fast).
-- **Some NIM catalog entries are not deployed for the runtime API.** `GET /v1/models` lists a model, but `POST /v1/chat/completions` against it returns HTTP 404 with empty body — an account-entitlement / backend-deployment issue, not a request-param issue, and not fixable from this repo. Confirmed 404-ing: `moonshotai/kimi-k2.6`, `deepseek-ai/deepseek-v4-pro`. Confirmed working (as of 2026-07-21): `z-ai/glm-5.2`, `minimaxai/minimax-m3`, `thinkingmachines/inkling`, `deepseek-ai/deepseek-v4-flash`. **Before wiring a new NIM model into a caller, probe it with a direct authenticated `curl` from inside a runner** — a catalog listing alone is not proof the runtime serves it. When a model 404s in production, the job posts a visible `:warning:` comment per PR (graceful degradation) so the breakage is loud rather than silent.
+- **NIM availability is region/account-dependent — verify with direct probes, not CI.** NIM's catalog (`GET /v1/models`) listing a model is not proof the runtime serves it for your account or from your IP. Two failure modes seen (2026-07-21):
+  - **Account entitlement:** `moonshotai/kimi-k2.6` returns HTTP 404 `Function '...': Not found for account '9WY0...'` — the account doesn't have access. Not fixable without changing the NVIDIA account tier.
+  - **IP/region hang:** `z-ai/glm-5.2` hangs (HTTP 000, curl `--max-time` cutoff) from some IPs (e.g. Serbia home/office) but responds fine from GitHub Actions runners. CI "success" on GLM is partly region lottery.
+  - `deepseek-ai/deepseek-v4-pro` previously looked like a CI-only 404 (PR #16) but works perfectly from a direct probe. The CI failures were transient/backend-side, not param or entitlement issues.
+
+  **Before wiring a new NIM model into a caller, probe it directly** with an authenticated `curl` from a non-CI machine (save a key to `~/.config/shell/.nimrc` per the "NIM thinking schemas" section above). A catalog listing + a CI run are not sufficient proof. When a model does fail in production, the job posts a visible `:warning:` comment per PR (graceful degradation) so the breakage is loud rather than silent.
+- **Some NIM models REQUIRE a thinking flag to respond at all.** `stepfun-ai/step-3.7-flash` hangs on plain body but returns in <1s with `chat_template_kwargs.thinking: true`. The per-model dispatch in `build_body()` handles this, but it's a sharp edge: removing the thinking flag from a model that needs it will silently break that model.
 
 ## Files
 
