@@ -283,14 +283,14 @@ jobs:
               case "$PROVIDER" in
                 gemini)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
-                    --connect-timeout 10 --max-time 300 \
+                    --connect-timeout 10 --max-time 900 \
                     -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}" \
                     -H 'Content-Type: application/json' \
                     -d @body.json)
                   ;;
                 openai|openrouter|nim|zen)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
-                    --connect-timeout 10 --max-time 300 \
+                    --connect-timeout 10 --max-time 900 \
                     -X POST "${ENDPOINT}" \
                     -H "Authorization: Bearer ${KEY}" \
                     -H 'Content-Type: application/json' \
