@@ -143,8 +143,57 @@ To add a provider whose API differs from both (e.g. direct Anthropic), add a new
   **Before wiring a new NIM model into a caller, probe it directly** with an authenticated `curl` from a non-CI machine (save a key to `~/.config/shell/.nimrc` per the "NIM thinking schemas" section above). A catalog listing + a CI run are not sufficient proof. When a model does fail in production, the job posts a visible `:warning:` comment per PR (graceful degradation) so the breakage is loud rather than silent.
 - **Some NIM models REQUIRE a thinking flag to respond at all.** `stepfun-ai/step-3.7-flash` hangs on plain body but returns in <1s with `chat_template_kwargs.thinking: true`. The per-model dispatch in `build_body()` handles this, but it's a sharp edge: removing the thinking flag from a model that needs it will silently break that model.
 
+## Reviewer scorecard
+
+Each PR gets multiple review comments from different models. They vary wildly in quality — some consistently find real bugs, others mostly hallucinate. **Track which is which** so you (and any agent working in this repo) know which reviews to trust and which to discount.
+
+### Methodology (apply on every PR batch)
+
+For every concrete technical claim in every review comment, bucket it:
+
+- **VALID** — factually correct AND actionable (would improve the code if fixed). Verify by reading the actual code; don't take the reviewer's word.
+- **NIT** — technically correct but cosmetic (whitespace, naming, doc phrasing). Not worth fixing standalone.
+- **INVALID** — factually wrong: misreads the code, hallucinates APIs/model IDs/GitHub Actions behavior, or relies on a stale training-cutoff notion of what models exist.
+
+Attribute each claim to the model that made it. A single comment can yield many claims. Compute `score = VALID − INVALID` per model (NITs are neutral). Common INVALID patterns to watch for:
+
+- **"Model X doesn't exist / looks like a future version"** — every reviewer hallucinates this about NIM models they haven't seen in training. Discount unless verified by direct probe.
+- **Hallucinated code structures** — "duplicate `secrets:` block", "no default `*)` branch", "missing `timeout-minutes`" — all real examples where reviewers invented problems from diff context that don't exist in the actual file.
+- **Generic good-practice filler** — "verify the SHA is trusted", "consider adding tests" — true but contentless.
+
+### Per-repo file
+
+Each consuming repo should keep a `reviewer-scorecard.md` at its root (not in `.github/` — it's a project artifact, not a workflow file). Format:
+
+```markdown
+# AI reviewer quality scorecard
+
+Tracks which review models produce useful feedback on <repo name>.
+Updated after each review cycle. Score = VALID − INVALID.
+
+## Scores (from YYYY-MM-DD cycle, N claims triaged)
+
+| Rank | Model | VALID | NIT | INVALID | Score | Notes |
+|------|-------|-------|-----|---------|-------|-------|
+| 1    | ...   | ...   | ... | ...     | ...   | ...   |
+
+## Patterns observed
+- ...
+
+## Action items implied
+- ...
+```
+
+The reference implementation lives at [`milllan/.github/reviewer-scorecard.md`](./reviewer-scorecard.md) — copy its structure, then maintain your own data. Per-repo matters because model quality varies by language (a model may be great at PHP reviews but weak on TypeScript); aggregate scores in `milllan/.github` average across all callers and obscure that.
+
+### How to use the scorecard
+- **When triaging a PR's reviews:** sort claims by VALID-first, weight models by historical score. A claim from a +5 model is more likely real than the same claim from a −3 model.
+- **When choosing the lineup:** if a model sits below −5 across multiple cycles, replace it. If a model sits above +3, keep it even if it's slow or intermittent.
+- **When adding a new model:** start it in parallel with the existing lineup for 2-3 cycles before deciding to keep it. The scorecard will tell you if it earns its slot.
+
 ## Files
 
 - `.github/workflows/gemini-reviewer.yml` — the reusable workflow itself
 - `README.md` — human-facing reference (same content, leaner)
 - `CHANGELOG.md` — version history; check this before bumping a caller SHA
+- `reviewer-scorecard.md` — reference implementation of the per-repo scorecard (this repo's own data)
