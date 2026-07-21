@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-07-21
+
+### Changed
+- **Retry attempts lowered from 4 to 2.** With `curl --max-time 400` (set in 1.10.0) and `timeout-minutes: 15`, only 2 thinking-mode attempts fit (`400s × 2 + 10s + 20s backoff = 830s`); the historical 4-attempt default was arithmetically impossible and got hard-cancelled by GitHub Actions mid-attempt. Verified on termly.io PR #3 (2026-07-21): deepseek-pro, glm-5.2, and minimax-m3 each ran for 15min14s and were killed by the timeout, leaving no review. Now 2 honest attempts, after which the job posts an error comment and exits 0 (graceful degradation).
+
 ## [1.10.0] - 2026-07-21
 
 ### Changed

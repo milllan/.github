@@ -71,12 +71,14 @@ jobs:
     # an expression because timeout-minutes only accepts a literal number
     # (actions/runner#1555).
     #
-    # Budget math: 15min job = 900s. Per-request curl --max-time is 400s, so
-    # ~2 thinking attempts + backoff (10s+20s) fit; non-thinking providers
-    # (gemini/openai/openrouter/zen) fit all 4 retries easily. A single
-    # thinking attempt may not finish the largest diffs in 400s — that's the
-    # accepted tradeoff for keeping retry honest (a 900s --max-time would make
-    # the retry loop dead code, since one slow attempt would hit the job wall).
+    # Budget math: 15min job = 900s ceiling. Per-request curl --max-time is
+    # 400s, so 2 thinking attempts + (10s+20s) backoff fit (830s). The inner
+    # retry loop is capped at max_attempts=2 accordingly — more would exceed
+    # the job budget and get hard-cancelled by GitHub Actions mid-attempt
+    # (verified on termly.io PR #3, 2026-07-21: 4 attempts × 400s = 31min got
+    # killed). Non-thinking providers (gemini/openai/openrouter/zen) easily
+    # fit 2 attempts. Tradeoff: a thinking review on the largest diffs may
+    # not finish in 400s — it'll retry once, then post an error comment.
     # See reviewer-scorecard.md #14 for the history.
     timeout-minutes: 15
 
@@ -287,7 +289,12 @@ jobs:
           #  - 400/404/422 (model removed/deprecated) -> skip to the next model.
           #  - 401/403 and permanent 429 (balance/quota/key) -> fail fast, since
           #    the key is shared and other models would fail identically.
-          max_attempts=4
+          # Budget math: timeout-minutes: 15 = 900s job ceiling. With curl
+          # --max-time 400 + 10s + 20s backoff, only ~2 attempts fit before the
+          # job gets killed. 4 attempts (the historical default) at 400s each
+          # = ~31min and gets hard-cancelled by GitHub Actions mid-attempt.
+          # See reviewer-scorecard.md #14 for the history.
+          max_attempts=2
           used_model=""
           last_error=""
           for MODEL in "${MODEL_LIST[@]}"; do
