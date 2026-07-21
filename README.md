@@ -82,6 +82,7 @@ The `GITHUB_TOKEN` is provided automatically by Actions — don't add it as a se
 - **Four comments per PR** (or more) when all jobs are enabled, headed `## Gemini Code Review`, `## GLM Code Review`, `## OpenRouter Code Review (model)`, `## NVIDIA NIM Code Review (model)`, and `## OpenCode Zen Code Review (model)`.
 - **Model fallback** (OpenRouter/OpenAI/NIM/Zen): if a model in `models` is removed/deprecated, the next one is tried automatically; the comment heading names the model that actually reviewed.
 - **Reasoning-model fallback**: OpenAI-compatible providers fall back to `.choices[0].message.reasoning` when `content` is empty (e.g. `mimo-v2.5-free`), so reasoning-only models still produce a review comment.
+- **NIM thinking modes** (per-model, not a global flag): `z-ai/glm-5.2` uses `chat_template_kwargs.enable_thinking` (key is `enable_thinking`, **not** `thinking`), `thinkingmachines/inkling` uses top-level `reasoning_effort`, and everything else (`moonshotai/kimi-k2.6`, `minimaxai/minimax-m3`, `deepseek-ai/*`) takes a plain body. The workflow dispatches per model name. See [CHANGELOG 1.8.0](./CHANGELOG.md#180---2026-07-21) for why.
 - **Cost guard**: diffs over `max_diff_chars` are skipped with a visible comment (not a silent no-op).
 - **Retries** transient API errors (429/502/503/504) with backoff before giving up.
 - **Graceful degradation**: if a provider key is missing or its API errors, that job posts an error comment; the other reviewer still runs.

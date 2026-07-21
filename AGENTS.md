@@ -85,7 +85,17 @@ The provider coupling is isolated to the "Run Review" step:
 - **gemini**: `generativelanguage.googleapis.com/.../models/{model}:generateContent?key=...`, response `.candidates[0].content.parts[0].text`
 - **openai**: `{openai_endpoint}` (default Z.ai Coding Plan) with `Authorization: Bearer`, response `.choices[0].message.content`
 - **openrouter**: `{openrouter_endpoint}` (default `https://openrouter.ai/api/v1/chat/completions`) with `Authorization: Bearer ${OPENROUTER_API_KEY}`, same response shape as openai
-- **nim**: `{nim_endpoint}` (default `https://integrate.api.nvidia.com/v1/chat/completions`, NVIDIA NIM) with `Authorization: Bearer ${NVIDIA_API_KEY}`, same response shape as openai. Model names follow NIM's `owner/model` scheme, e.g. `z-ai/glm-5.2`.
+- **nim**: `{nim_endpoint}` (default `https://integrate.api.nvidia.com/v1/chat/completions`, NVIDIA NIM) with `Authorization: Bearer ${NVIDIA_API_KEY}`, same response shape as openai. Model names follow NIM's `owner/model` scheme, e.g. `z-ai/glm-5.2`, `moonshotai/kimi-k2.6`, `minimaxai/minimax-m3`, `thinkingmachines/inkling`.
+
+### NIM thinking schemas (per-model)
+
+NIM models do **not** share a single "thinking" flag — the build.nvidia.com examples differ per model, and NIM silently ignores unknown keys (so the wrong flag is harmless but does nothing). The workflow's `nim` body builder dispatches per model name:
+
+- **Plain body** (no extra fields): `moonshotai/kimi-k2.6`, `minimaxai/minimax-m3`, `deepseek-ai/*`, and anything not listed below.
+- **`chat_template_kwargs: { enable_thinking: true, clear_thinking: true }`**: `z-ai/glm-5.2`. (The correct GLM key is `enable_thinking`, **not** `thinking`; `clear_thinking: true` strips the reasoning trace so only the final review lands in the PR comment.)
+- **`reasoning_effort: "high"`** (top-level, OpenAI o1-style): `thinkingmachines/inkling`.
+
+To add a new NIM model, identify which of the three schemas it uses from its build.nvidia.com example, then add a `case` to the `nim)` branch of `build_body()` in the workflow. Don't blanket-apply any single flag — that was the v1.7.1 bug.
 - **zen**: `{zen_endpoint}` (default `https://opencode.ai/zen/v1/chat/completions`, OpenCode Zen gateway) with `Authorization: Bearer ${OPENCODE_API_KEY}`, same response shape as openai. Free models include `deepseek-v4-flash-free` and `mimo-v2.5-free`. Reasoning-only models (e.g. `mimo-v2.5-free`) return `content:null`; the workflow falls back to `.choices[0].message.reasoning` so they still post a review.
 
 The OpenAI-compatible branch (`openai`/`openrouter`/`nim`/`zen`) supports a **model fallback list**: the `models` input (space/comma-separated) is tried in order; if a model returns HTTP 400/404/422 (removed/deprecated) the next is used. When `models` is set it fully overrides the single `model` input (which is only used when `models` is empty); `models` is ignored for `gemini`. Permanent 401/403 or balance/quota 429 fail fast (shared key). The comment heading names the model that actually reviewed, e.g. `## OpenRouter Code Review (tencent/hy3:free)`, `## NVIDIA NIM Code Review (z-ai/glm-5.2)`, or `## OpenCode Zen Code Review (deepseek-v4-flash-free)`.

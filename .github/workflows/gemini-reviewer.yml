@@ -245,19 +245,40 @@ jobs:
                 }' > body.json
                 ;;
               nim)
-                # NVIDIA NIM "thinking" models (e.g. deepseek-v4-pro, minimax-m3)
-                # require chat_template_kwargs.thinking=true per the official
-                # build.nvidia.com example; without it some models 404 or refuse
-                # to generate. Harmless for non-thinking NIM models (ignored).
-                jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
+                # NVIDIA NIM models use one of three thinking schemas — there is
+                # no single magic flag. Per build.nvidia.com's own examples:
+                #   - z-ai/glm-5.2            -> chat_template_kwargs.enable_thinking
+                #                              (the earlier "thinking: true" was a
+                #                               wrong key name; NIM silently ignored
+                #                               it, so GLM ran non-thinking).
+                #   - thinkingmachines/inkling -> top-level "reasoning_effort"
+                #   - everything else         -> plain body, no extra fields
+                #                              (kimi-k2.6, minimax-m3, deepseek-*).
+                # Injecting the wrong schema is harmless (NIM ignores unknown keys)
+                # but never enables thinking, so we dispatch per model name.
+                case "$MODEL" in
+                  z-ai/glm-5.2)
+                    nim_extras='{"chat_template_kwargs":{"enable_thinking":true,"clear_thinking":true}}'
+                    ;;
+                  thinkingmachines/inkling)
+                    nim_extras='{"reasoning_effort":"high"}'
+                    ;;
+                  *)
+                    nim_extras='{}'
+                    ;;
+                esac
+                # Build the shared body then merge the per-model extras with `*`,
+                # so the 8-line messages block isn't duplicated per schema.
+                jq -n --rawfile diff pr_diff.txt \
+                     --arg model "$MODEL" \
+                     --argjson extras "$nim_extras" '{
                   model: $model,
                   messages: [
                     { role: "system", content: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." },
                     { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
                   ],
-                  temperature: 0.2,
-                  chat_template_kwargs: { thinking: true }
-                }' > body.json
+                  temperature: 0.2
+                } * $extras' > body.json
                 ;;
               *)
                 printf '## %s Code Review\n\n:warning: Unknown provider "%s".\n' "$LABEL" "$PROVIDER" > review_report.md
