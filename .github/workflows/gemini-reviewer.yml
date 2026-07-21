@@ -293,7 +293,9 @@ jobs:
               unavailable=no
               fatal=no
               case "$http_code" in
-                502|503|504)
+                000|502|503|504)
+                  # 000 = curl-level failure (DNS, connection refused, timeout
+                  # before any HTTP response). Transient — retry like 5xx.
                   retry=yes
                   ;;
                 429)
