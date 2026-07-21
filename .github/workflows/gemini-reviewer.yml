@@ -69,10 +69,15 @@ jobs:
     # setting it there silently rejects the workflow as a "file issue" with no
     # error message. It must live here on the called job. Hardcoded rather than
     # an expression because timeout-minutes only accepts a literal number
-    # (actions/runner#1555). 15min is the ceiling: per-request curl --max-time
-    # is 900s below, so a single attempt can finish a large thinking review;
-    # the retry loop fits inside this budget; and a hung provider still gets
-    # killed in 15min rather than burning the 6h Actions cap.
+    # (actions/runner#1555).
+    #
+    # Budget math: 15min job = 900s. Per-request curl --max-time is 400s, so
+    # ~2 thinking attempts + backoff (10s+20s) fit; non-thinking providers
+    # (gemini/openai/openrouter/zen) fit all 4 retries easily. A single
+    # thinking attempt may not finish the largest diffs in 400s — that's the
+    # accepted tradeoff for keeping retry honest (a 900s --max-time would make
+    # the retry loop dead code, since one slow attempt would hit the job wall).
+    # See reviewer-scorecard.md #14 for the history.
     timeout-minutes: 15
 
     steps:
@@ -293,14 +298,14 @@ jobs:
               case "$PROVIDER" in
                 gemini)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
-                    --connect-timeout 10 --max-time 900 \
+                    --connect-timeout 10 --max-time 400 \
                     -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}" \
                     -H 'Content-Type: application/json' \
                     -d @body.json)
                   ;;
                 openai|openrouter|nim|zen)
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
-                    --connect-timeout 10 --max-time 900 \
+                    --connect-timeout 10 --max-time 400 \
                     -X POST "${ENDPOINT}" \
                     -H "Authorization: Bearer ${KEY}" \
                     -H 'Content-Type: application/json' \

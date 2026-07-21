@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-07-21
+
+### Changed
+- **Per-request curl `--max-time` lowered from 900s to 400s.** The 900s value (set in 1.9.0) was arithmetically incompatible with `timeout-minutes: 15` (900s): one slow thinking attempt would consume the entire job budget, making the 4-attempt retry loop dead code — the inline comment claiming otherwise was wrong. 400s keeps the retry honest (2 thinking attempts + backoff fit in 15min; non-thinking providers fit all 4). Tradeoff: a single thinking review on the largest diffs may not finish in 400s and will retry. Found by mimo/GLM/minimax/deepseek-v4-flash in the v1.9.0 review cycle — see `reviewer-scorecard.md` finding #14.
+- **Fixed misleading `timeout-minutes` comment** that claimed "the retry loop fits inside this budget" — it didn't, at 900s.
+
+### Added
+- **`reviewer-scorecard.md`** — per-model review-quality tracking. Logs VALID/NIT/INVALID claim counts per reviewer so future cycles can see which models are pulling weight. Initial ranking from the v1.9.0 cycle: `mimo-v2.5-free` (+1) and `deepseek-v4-pro` (0) signal-best; `step-3.7-flash` (−6) worst.
+
+### Docs
+- README fixed: was "Four comments per PR" while listing 5 heading types. Now describes the actual one-comment-per-job behavior.
+
 ## [1.9.0] - 2026-07-21
 
 ### Changed

@@ -79,7 +79,7 @@ The `GITHUB_TOKEN` is provided automatically by Actions — don't add it as a se
 ## Behavior notes
 
 - **Triggers on** `pull_request` (`opened`, `synchronize`, `reopened`) — every commit gets re-reviewed.
-- **Four comments per PR** (or more) when all jobs are enabled, headed `## Gemini Code Review`, `## GLM Code Review`, `## OpenRouter Code Review (model)`, `## NVIDIA NIM Code Review (model)`, and `## OpenCode Zen Code Review (model)`.
+- **One comment per job per PR.** A typical caller wires up 6 jobs (6 NIM/Zen models), so each PR gets 6 review comments. Headings: `## NVIDIA NIM Code Review (model)` and `## OpenCode Zen Code Review (model)`. Older single-provider setups post just `## Gemini Code Review` or `## GLM Code Review`.
 - **Model fallback** (OpenRouter/OpenAI/NIM/Zen): if a model in `models` is removed/deprecated, the next one is tried automatically; the comment heading names the model that actually reviewed.
 - **Reasoning-model fallback**: OpenAI-compatible providers fall back to `.choices[0].message.reasoning` when `content` is empty (e.g. `mimo-v2.5-free`), so reasoning-only models still produce a review comment.
 - **NIM thinking modes** (per-model, not a global flag): each model has its own thinking param schema, verified by direct probes — `z-ai/glm-5.2` uses `chat_template_kwargs.enable_thinking`, `minimaxai/minimax-m3` uses `chat_template_kwargs.thinking_mode: "enabled"`, `thinkingmachines/inkling` uses top-level `reasoning_effort: "high"`, `deepseek-ai/deepseek-v4-{pro,flash}` and `stepfun-ai/step-3.7-flash` use `chat_template_kwargs.thinking: true` (step-3.7-flash *requires* it). See [AGENTS.md](./AGENTS.md#nim-thinking-schemas-per-model) for the full verified table and how to add a new model.
