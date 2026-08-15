@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-08-15
+
+### Fixed
+- **Diff step no longer shallow-fetches the base ref.** \`git fetch origin $BASE_REF --depth=1\` truncated main to a single commit with no parent info, so \`git diff origin/main...HEAD\` failed with \`no merge base\` the moment main diverged from an open PR branch (any merge to main while a PR is open). Verified on creative-escapes PR #11: reviews worked while main's tip WAS the merge base, then all jobs started failing after PRs #10/#12 merged under it. The fetch now pulls full history (checkout already uses \`fetch-depth: 0\`, so this is cheap).
+
 ## [1.11.0] - 2026-07-21
 
 ### Changed

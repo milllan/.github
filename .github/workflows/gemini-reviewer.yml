@@ -95,7 +95,12 @@ jobs:
           MAX_DIFF_CHARS: ${{ inputs.max_diff_chars }}
         run: |
           # Ensure the base ref exists locally (shallow/PR checkouts can miss it).
-          git fetch origin "${BASE_REF}" --depth=1 2>/dev/null || true
+          # Fetch the base ref with FULL history — a --depth=1 shallow fetch breaks
+          # merge-base computation ("no merge base") as soon as the base branch
+          # diverges from the PR branch (any merge to main while a PR is open).
+          # actions/checkout already fetched full history (fetch-depth: 0), so
+          # this full fetch is cheap and keeps origin/${BASE_REF} complete.
+          git fetch origin "${BASE_REF}" 2>/dev/null || true
           git diff "origin/${BASE_REF}...HEAD" > pr_diff.txt
           size=$(wc -c < pr_diff.txt)
           if [ "$size" -eq 0 ]; then
