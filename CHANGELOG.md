@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-08-15
+
+### Changed
+- **Provider-aware retry counts.** \`nim\` keeps \`max_attempts=2\` (thinking requests take ~400s each; only 2 fit the 15-min budget). Fast providers (\`gemini\`/\`openai\`/\`openrouter\`/\`zen\`) return to \`max_attempts=4\` — they respond in seconds, so 4 attempts fit easily. Root cause: \`gemini-3.7-flash\` intermittently 503s under load and 2 attempts weren't enough headroom (6 consecutive 503s across 3 runs on creative-escapes PR #11 while direct probes returned 200).
+
 ## [1.12.0] - 2026-08-15
 
 ### Fixed

@@ -294,12 +294,19 @@ jobs:
           #  - 400/404/422 (model removed/deprecated) -> skip to the next model.
           #  - 401/403 and permanent 429 (balance/quota/key) -> fail fast, since
           #    the key is shared and other models would fail identically.
-          # Budget math: timeout-minutes: 15 = 900s job ceiling. With curl
-          # --max-time 400 + 10s + 20s backoff, only ~2 attempts fit before the
-          # job gets killed. 4 attempts (the historical default) at 400s each
-          # = ~31min and gets hard-cancelled by GitHub Actions mid-attempt.
+          # Budget math: timeout-minutes: 15 = 900s job ceiling. NIM thinking
+          # requests can take ~400s each, so only 2 attempts + backoff fit —
+          # 4 would be ~31min and get hard-cancelled mid-attempt (verified on
+          # termly.io PR #3). Fast providers (gemini/openai/openrouter/zen)
+          # respond in seconds, so they keep the historical 4 attempts —
+          # gemini-3.7-flash in particular needs them: it intermittently 503s
+          # under load (6 consecutive 503s across 3 runs on creative-escapes
+          # PR #11, 2026-08-15, while direct probes returned 200).
           # See reviewer-scorecard.md #14 for the history.
-          max_attempts=2
+          case "$PROVIDER" in
+            nim) max_attempts=2 ;;
+            *)   max_attempts=4 ;;
+          esac
           used_model=""
           last_error=""
           for MODEL in "${MODEL_LIST[@]}"; do
