@@ -186,6 +186,8 @@ Updated after each review cycle. Score = VALID − INVALID.
 
 The reference implementation lives at [`milllan/.github/reviewer-scorecard.md`](./reviewer-scorecard.md) — copy its structure, then maintain your own data. Per-repo matters because model quality varies by language (a model may be great at PHP reviews but weak on TypeScript); aggregate scores in `milllan/.github` average across all callers and obscure that.
 
+**Update practice (owner rule, 2026-08-18):** scorecard updates are committed directly to the consuming repo's default branch — never opened as PRs. Bot-reviewing pure bookkeeping wastes the review pipeline, and the models being scored must not review their own scorecard. This is a standing exception to any branch+PR-everything rule in consuming repos, scoped to `reviewer-scorecard.md` only.
+
 ### How to use the scorecard
 - **When triaging a PR's reviews:** sort claims by VALID-first, weight models by historical score. A claim from a +5 model is more likely real than the same claim from a −3 model.
 - **When choosing the lineup:** if a model sits below −5 across multiple cycles, replace it. If a model sits above +3, keep it even if it's slow or intermittent.
