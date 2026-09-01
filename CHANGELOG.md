@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-09-01
+
+### Added
+- **Zen muse-spark support (Responses API).** `provider: zen, model: muse-spark-1.2-contributor-free` now works as the zen reviewer, replacing `deepseek-v4-flash-free` (down upstream since 2026-09-01: HTTP 400 "Model is unavailable"). muse-spark models do not serve `/chat/completions` — direct probes returned instant HTTP 500 (6/6, streaming or not) — so the zen branch now dispatches per model (like the NIM thinking schemas): `muse-spark*` posts to the new `zen_responses_endpoint` input (default `https://opencode.ai/zen/v1/responses`, OpenAI Responses API shape) with `reasoning.effort: "high"`, and extracts text from `.output[]` message items. Verified by direct probes (200 @ high ~15s / xhigh ~18s) and by executing the extracted `Run Review` script locally end-to-end: muse direct (status=ok, 16s), fallback list `deepseek-v4-flash-free muse-spark-1.2-contributor-free` skipping the dead deepseek (status=ok), and the `openai`/GLM chat-completions regression path (status=ok).
+
 ## [1.13.0] - 2026-08-15
 
 ### Changed

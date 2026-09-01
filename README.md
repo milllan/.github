@@ -38,9 +38,9 @@ jobs:
       provider: nim
       model: z-ai/glm-5.2
     secrets: { NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }} }
-  zen-deepseek-review:
+  zen-muse-review:
     uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
-    with: { provider: zen, model: deepseek-v4-flash-free }
+    with: { provider: zen, model: muse-spark-1.2-contributor-free }
     secrets: { OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }} }
   zen-mimo-review:
     uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
@@ -54,13 +54,14 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `provider` | `gemini` | `gemini`, `openai` (OpenAI-compatible endpoint), `openrouter` (OpenRouter, OpenAI-compatible), `nim` (NVIDIA NIM, OpenAI-compatible, e.g. `z-ai/glm-5.2`), or `zen` (OpenCode Zen gateway, OpenAI-compatible, e.g. `deepseek-v4-flash-free`, `mimo-v2.5-free`). |
-| `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`, `tencent/hy3:free`, `z-ai/glm-5.2`, `deepseek-v4-flash-free`). For `openai`/`openrouter`/`nim`/`zen`, this is used **only when `models` is empty** — if `models` is set, it fully overrides `model`. |
+| `provider` | `gemini` | `gemini`, `openai` (OpenAI-compatible endpoint), `openrouter` (OpenRouter, OpenAI-compatible), `nim` (NVIDIA NIM, OpenAI-compatible, e.g. `z-ai/glm-5.2`), or `zen` (OpenCode Zen gateway, e.g. `muse-spark-1.2-contributor-free`, `mimo-v2.5-free`). |
+| `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`, `tencent/hy3:free`, `z-ai/glm-5.2`, `muse-spark-1.2-contributor-free`). For `openai`/`openrouter`/`nim`/`zen`, this is used **only when `models` is empty** — if `models` is set, it fully overrides `model`. |
 | `models` | `""` | Space- or comma-separated fallback list for `openai`/`openrouter`/`nim`/`zen`. Tried in order; the next is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. If it is **non-empty after splitting**, it fully replaces `model` as the ordered list to try; if it parses to nothing (e.g. only separators), `model` is used instead. Empty = only `model` is used. Ignored for `gemini`. |
 | `openai_endpoint` | `https://api.z.ai/api/coding/paas/v4/chat/completions` | OpenAI-compatible endpoint for `openai`. Defaults to Z.ai's **Coding Plan** (subscription). Use `https://api.z.ai/api/paas/v4/chat/completions` for pay-per-token API credits. |
 | `openrouter_endpoint` | `https://openrouter.ai/api/v1/chat/completions` | Chat-completions endpoint for `openrouter`. Only override if you self-host or proxy OpenRouter. |
 | `nim_endpoint` | `https://integrate.api.nvidia.com/v1/chat/completions` | Chat-completions endpoint for `nim` (NVIDIA NIM). Only override if you self-host or proxy NIM. |
 | `zen_endpoint` | `https://opencode.ai/zen/v1/chat/completions` | Chat-completions endpoint for `zen` (OpenCode Zen). Only override if you self-host or proxy Zen. |
+| `zen_responses_endpoint` | `https://opencode.ai/zen/v1/responses` | Responses-API endpoint for `zen`, used automatically for `muse-spark*` models (they do not serve chat-completions). Only override if you self-host or proxy Zen. |
 | `max_diff_chars` | `250000` | Skip review if the raw diff exceeds this. `0` disables the limit. |
 
 ## Secrets
@@ -82,6 +83,7 @@ The `GITHUB_TOKEN` is provided automatically by Actions — don't add it as a se
 - **One comment per job per PR.** A typical caller wires up 6 jobs (6 NIM/Zen models), so each PR gets 6 review comments. Headings: `## NVIDIA NIM Code Review (model)` and `## OpenCode Zen Code Review (model)`. Older single-provider setups post just `## Gemini Code Review` or `## GLM Code Review`.
 - **Model fallback** (OpenRouter/OpenAI/NIM/Zen): if a model in `models` is removed/deprecated, the next one is tried automatically; the comment heading names the model that actually reviewed.
 - **Reasoning-model fallback**: OpenAI-compatible providers fall back to `.choices[0].message.reasoning` when `content` is empty (e.g. `mimo-v2.5-free`), so reasoning-only models still produce a review comment.
+- **Zen muse-spark models use the Responses API** (per-model, like NIM thinking modes): `muse-spark*` models do not serve `/chat/completions` (instant HTTP 500) — the workflow posts them to `/zen/v1/responses` instead and extracts text from `.output[]`. Verified by direct probe 2026-09-01; see [AGENTS.md](./AGENTS.md).
 - **NIM thinking modes** (per-model, not a global flag): each model has its own thinking param schema, verified by direct probes — `z-ai/glm-5.2` uses `chat_template_kwargs.enable_thinking`, `minimaxai/minimax-m3` uses `chat_template_kwargs.thinking_mode: "enabled"`, `thinkingmachines/inkling` uses top-level `reasoning_effort: "high"`, `deepseek-ai/deepseek-v4-{pro,flash}` and `stepfun-ai/step-3.7-flash` use `chat_template_kwargs.thinking: true` (step-3.7-flash *requires* it). See [AGENTS.md](./AGENTS.md#nim-thinking-schemas-per-model) for the full verified table and how to add a new model.
 - **Cost guard**: diffs over `max_diff_chars` are skipped with a visible comment (not a silent no-op).
 - **Retries** transient API errors (429/502/503/504) with backoff before giving up.

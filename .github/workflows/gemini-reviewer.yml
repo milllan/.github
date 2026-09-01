@@ -9,7 +9,7 @@ on:
   workflow_call:
     inputs:
       provider:
-        description: "Review backend: 'gemini' (Google Generative Language API), 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, DeepSeek), 'openrouter' (OpenRouter, OpenAI-compatible), 'nim' (NVIDIA NIM, OpenAI-compatible, e.g. z-ai/glm-5.2), or 'zen' (OpenCode Zen gateway, OpenAI-compatible, e.g. deepseek-v4-flash-free, mimo-v2.5-free)."
+        description: "Review backend: 'gemini' (Google Generative Language API), 'openai' (any OpenAI-compatible endpoint, e.g. Z.ai GLM, DeepSeek), 'openrouter' (OpenRouter, OpenAI-compatible), 'nim' (NVIDIA NIM, OpenAI-compatible, e.g. z-ai/glm-5.2), or 'zen' (OpenCode Zen gateway, e.g. muse-spark-1.2-contributor-free, mimo-v2.5-free)."
         type: string
         default: "gemini"
       model:
@@ -36,6 +36,10 @@ on:
         description: "Chat-completions endpoint for provider 'zen'. Defaults to https://opencode.ai/zen/v1/chat/completions (OpenCode Zen gateway). Override only if you self-host or proxy Zen."
         type: string
         default: "https://opencode.ai/zen/v1/chat/completions"
+      zen_responses_endpoint:
+        description: "Responses-API endpoint for provider 'zen', used for muse-spark models (they do not serve chat-completions). Defaults to https://opencode.ai/zen/v1/responses. Override only if you self-host or proxy Zen."
+        type: string
+        default: "https://opencode.ai/zen/v1/responses"
       max_diff_chars:
         description: "Skip the review if the raw diff exceeds this many characters (cost guard). 0 disables the limit."
         type: number
@@ -128,6 +132,7 @@ jobs:
           OPENROUTER_ENDPOINT: ${{ inputs.openrouter_endpoint }}
           NIM_ENDPOINT: ${{ inputs.nim_endpoint }}
           ZEN_ENDPOINT: ${{ inputs.zen_endpoint }}
+          ZEN_RESPONSES_ENDPOINT: ${{ inputs.zen_responses_endpoint }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -217,14 +222,49 @@ jobs:
                 }' > body.json
                 ;;
               openai|openrouter|zen)
-                jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
-                  model: $model,
-                  messages: [
-                    { role: "system", content: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." },
-                    { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
-                  ],
-                  temperature: 0.2
-                }' > body.json
+                if [ "$PROVIDER" = "zen" ]; then
+                  case "$MODEL" in
+                    muse-spark*)
+                      # muse-spark models on the Zen gateway are OpenAI
+                      # *Responses* API models, not chat-completions: verified
+                      # by direct probe 2026-09-01, /chat/completions returns an
+                      # instant HTTP 500 for them (streaming or not, with or
+                      # without max_tokens), while /v1/responses returns 200.
+                      # Shape: system/user roles inside input[], text arrives
+                      # under .output[] message items (see extraction below).
+                      # reasoning.effort high/xhigh both verified 200
+                      # (xhigh ~= 18s, ~1000 reasoning tokens on a toy diff).
+                      jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
+                        model: $model,
+                        input: [
+                          { role: "system", content: [ { type: "input_text", text: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." } ] },
+                          { role: "user", content: [ { type: "input_text", text: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") } ] }
+                        ],
+                        reasoning: { effort: "high" },
+                        temperature: 0.2
+                      }' > body.json
+                      ;;
+                    *)
+                      jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
+                        model: $model,
+                        messages: [
+                          { role: "system", content: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." },
+                          { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
+                        ],
+                        temperature: 0.2
+                      }' > body.json
+                      ;;
+                  esac
+                else
+                  jq -n --rawfile diff pr_diff.txt --arg model "$MODEL" '{
+                    model: $model,
+                    messages: [
+                      { role: "system", content: "You are an expert software engineer performing a pull request code review. Be concrete and concise. Output GitHub-flavored Markdown only. Start with a one-line summary, then sections: Critical, Suggestions, Nitpicks. Cite file paths and line ranges from the diff. If you have no concerns in a section, write \"None\". Do not restate the diff." },
+                      { role: "user", content: ("Review the following git diff for bugs, security/safety hazards, performance issues, logic flaws, and coding-standard violations. Suggest concrete fixes with code snippets where useful.\n\n```diff\n" + $diff + "\n```") }
+                    ],
+                    temperature: 0.2
+                  }' > body.json
+                fi
                 ;;
               nim)
                 # NVIDIA NIM models use one of several thinking schemas — there is
@@ -323,9 +363,17 @@ jobs:
                     -d @body.json)
                   ;;
                 openai|openrouter|nim|zen)
+                  # Zen muse-spark models post to the Responses endpoint, not
+                  # the chat-completions endpoint (see build_body comment).
+                  REQ_ENDPOINT="$ENDPOINT"
+                  if [ "$PROVIDER" = "zen" ]; then
+                    case "$MODEL" in
+                      muse-spark*) REQ_ENDPOINT="${ZEN_RESPONSES_ENDPOINT:-https://opencode.ai/zen/v1/responses}" ;;
+                    esac
+                  fi
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
                     --connect-timeout 10 --max-time 400 \
-                    -X POST "${ENDPOINT}" \
+                    -X POST "${REQ_ENDPOINT}" \
                     -H "Authorization: Bearer ${KEY}" \
                     -H 'Content-Type: application/json' \
                     -d @body.json)
@@ -411,14 +459,32 @@ jobs:
               reason=$(jq -r '.candidates[0].finishReason // .promptFeedback.blockReason // "unknown"' response.json)
               ;;
             openai|openrouter|nim|zen)
-              review=$(jq -r '.choices[0].message.content // empty' response.json)
-              # Reasoning models (e.g. mimo-v2.5-free) may return content:null
-              # with the text under .reasoning — fall back to that so the
-              # reviewer still produces a comment.
-              if [ -z "$review" ]; then
-                review=$(jq -r '.choices[0].message.reasoning // empty' response.json)
+              if [ "$PROVIDER" = "zen" ]; then
+                case "$MODEL" in
+                  muse-spark*)
+                    # Responses API shape: text lives in .output[] message
+                    # items; finish state is .status (completed/incomplete).
+                    review=$(jq -r '[.output[]? | select(.type == "message") | .content[]? | select(.type == "output_text") | .text] | join("")' response.json)
+                    reason=$(jq -r '.status // "unknown"' response.json)
+                    ;;
+                  *)
+                    review=$(jq -r '.choices[0].message.content // empty' response.json)
+                    # Reasoning models (e.g. mimo-v2.5-free) may return content:null
+                    # with the text under .reasoning — fall back to that so the
+                    # reviewer still produces a comment.
+                    if [ -z "$review" ]; then
+                      review=$(jq -r '.choices[0].message.reasoning // empty' response.json)
+                    fi
+                    reason=$(jq -r '.choices[0].finish_reason // "unknown"' response.json)
+                    ;;
+                esac
+              else
+                review=$(jq -r '.choices[0].message.content // empty' response.json)
+                if [ -z "$review" ]; then
+                  review=$(jq -r '.choices[0].message.reasoning // empty' response.json)
+                fi
+                reason=$(jq -r '.choices[0].finish_reason // "unknown"' response.json)
               fi
-              reason=$(jq -r '.choices[0].finish_reason // "unknown"' response.json)
               ;;
           esac
 
