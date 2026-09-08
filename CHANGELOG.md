@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Zen muse-spark support (Responses API).** `provider: zen, model: muse-spark-1.2-contributor-free` now works as the zen reviewer, replacing `deepseek-v4-flash-free` (down upstream since 2026-09-01: HTTP 400 "Model is unavailable"). muse-spark models do not serve `/chat/completions` — direct probes returned instant HTTP 500 (6/6, streaming or not) — so the zen branch now dispatches per model (like the NIM thinking schemas): `muse-spark*` posts to the new `zen_responses_endpoint` input (default `https://opencode.ai/zen/v1/responses`, OpenAI Responses API shape) with `reasoning.effort: "high"`, and extracts text from `.output[]` message items. Verified by direct probes (200 @ high ~15s / xhigh ~18s) and by executing the extracted `Run Review` script locally end-to-end: muse direct (status=ok, 16s), fallback list `deepseek-v4-flash-free muse-spark-1.2-contributor-free` skipping the dead deepseek (status=ok), and the `openai`/GLM chat-completions regression path (status=ok).
+- **Zen client-identification headers.** Zen requests now send `User-Agent: milllan-github-reviewer/1.0` and a per-run `x-opencode-session` UUID. OpenCode enforces these on the `/zen/go` gateway for external tools (2026-09); the free `/zen/v1` gateway did not yet on 2026-09-08 (probe matrix: identical responses with and without) — sent preemptively.
+- **Skip-to-next-model for removed models and free-tier caps.** HTTP 410 joins 400/404/422 as "unavailable" (NIM `z-ai/glm-5.2` began 410ing 2026-09-01 with an empty body); 429s carrying error type `FreeUsageLimitError` (OpenCode free-tier cap) skip to the next model instead of burning all retry attempts. The "All models failed" comment now lists every skipped model's real error instead of appending a misleading "failed after N attempt(s)" tail (a skipped model makes 1 attempt, not N).
+
+### Changed
+- **This repo's own caller** (`.github/workflows/code-review.yml`) swaps `zen-deepseek-review` for `zen-muse-review` with fallback `models: muse-spark-1.2-contributor-free mimo-v2.5-free` (mixed API families, verified).
 
 ## [1.13.0] - 2026-08-15
 

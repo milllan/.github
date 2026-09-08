@@ -17,7 +17,7 @@ on:
         type: string
         default: "gemini-3.5-flash"
       models:
-        description: "Space- or comma-separated fallback list of models for provider 'openai'/'openrouter'/'nim'/'zen'. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/422) or all retries fail. If empty, only 'model' is used."
+        description: "Space- or comma-separated fallback list of models for provider 'openai'/'openrouter'/'nim'/'zen'. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/410/422), hits a free-tier cap, or all retries fail. If empty, only 'model' is used."
         type: string
         default: ""
       openai_endpoint:
@@ -331,7 +331,7 @@ jobs:
           # ---- Call the provider, trying each model until one succeeds ----
           # Outer loop: models. Inner loop: up to 4 attempts with transient retry.
           #  - 502/503/504 and transient 429 -> retry the same model.
-          #  - 400/404/422 (model removed/deprecated) -> skip to the next model.
+          #  - 400/404/410/422 (model removed/deprecated) -> skip to the next model.
           #  - 401/403 and permanent 429 (balance/quota/key) -> fail fast, since
           #    the key is shared and other models would fail identically.
           # Budget math: timeout-minutes: 15 = 900s job ceiling. NIM thinking
@@ -366,14 +366,25 @@ jobs:
                   # Zen muse-spark models post to the Responses endpoint, not
                   # the chat-completions endpoint (see build_body comment).
                   REQ_ENDPOINT="$ENDPOINT"
+                  EXTRA_HEADERS=()
                   if [ "$PROVIDER" = "zen" ]; then
                     case "$MODEL" in
                       muse-spark*) REQ_ENDPOINT="${ZEN_RESPONSES_ENDPOINT:-https://opencode.ai/zen/v1/responses}" ;;
                     esac
+                    # OpenCode is rolling out client identification for
+                    # external API consumers (enforced on the /zen/go gateway
+                    # as of 2026-09): explicit User-Agent + a stable
+                    # per-conversation session id. Not enforced on /zen/v1 yet
+                    # (probes 2026-09-08 got identical replies with and
+                    # without), sent anyway so the reviewer keeps working when
+                    # it lands there.
+                    EXTRA_HEADERS=(-H "x-opencode-session: $(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "ghrun-${GITHUB_RUN_ID:-local}")")
                   fi
                   http_code=$(curl -sS -w "%{http_code}" -o response.json \
                     --connect-timeout 10 --max-time 400 \
                     -X POST "${REQ_ENDPOINT}" \
+                    -A "milllan-github-reviewer/1.0" \
+                    ${EXTRA_HEADERS[@]+"${EXTRA_HEADERS[@]}"} \
                     -H "Authorization: Bearer ${KEY}" \
                     -H 'Content-Type: application/json' \
                     -d @body.json)
@@ -396,10 +407,18 @@ jobs:
                   ;;
                 429)
                   # Peek at the body: permanent 429s mention balance/quota/billing/key.
-                  body_hint=$(jq -r '(.error.message // .error // "") | ascii_downcase' response.json 2>/dev/null || echo "")
+                  body_hint=$(jq -r '((.error.type // "") + " " + (.error.message // .error // "")) | ascii_downcase' response.json 2>/dev/null || echo "")
                   case "$body_hint" in
                     *balance*|*recharge*|*quota*|*billing*|*limit*:*\ 0*|*invalid*key*|*unauthorized*)
                       fatal=yes
+                      ;;
+                    *freeusagelimit*)
+                      # OpenCode Zen free-tier cap (FreeUsageLimitError). Does
+                      # not clear within retry backoff (verified 2026-09-08:
+                      # identical 429 across 4 attempts spanning minutes), so
+                      # skip to the next model instead of burning attempts —
+                      # another model's cap may still have headroom.
+                      unavailable=yes
                       ;;
                     *)
                       retry=yes
@@ -409,7 +428,9 @@ jobs:
                 401|403)
                   fatal=yes
                   ;;
-                400|404|422)
+                400|404|410|422)
+                  # 410 Gone = model removed upstream (NIM z-ai/glm-5.2 began
+                  # returning 410 with an empty body on 2026-09-01).
                   unavailable=yes
                   ;;
               esac
@@ -421,7 +442,13 @@ jobs:
               if [ "$unavailable" = "yes" ]; then
                 msg=$(get_error_msg)
                 echo "Model '$MODEL' unavailable (HTTP $http_code): $msg — trying next model."
-                last_error="Model '$MODEL' unavailable (HTTP $http_code): $msg"
+                # Keep every model's failure visible in the final comment,
+                # not just the last one's.
+                if [ -n "$last_error" ]; then
+                  last_error="$last_error; Model '$MODEL' unavailable (HTTP $http_code): $msg"
+                else
+                  last_error="Model '$MODEL' unavailable (HTTP $http_code): $msg"
+                fi
                 break
               fi
 
@@ -438,11 +465,20 @@ jobs:
             done
 
             if [ -z "$used_model" ]; then
-              if [ -z "$last_error" ]; then
-                last_error="Model '$MODEL' failed after $max_attempts attempt(s) (HTTP $http_code)."
-              else
-                last_error="$last_error; Model '$MODEL' failed after $max_attempts attempt(s) (HTTP $http_code)."
-              fi
+              # If this model was already described as unavailable/skipped,
+              # its real error is in last_error — don't append a misleading
+              # "failed after N attempt(s)" tail (a skipped model made 1
+              # attempt, not N).
+              case "$last_error" in
+                *"Model '$MODEL' "*) : ;;
+                *)
+                  if [ -z "$last_error" ]; then
+                    last_error="Model '$MODEL' failed after $max_attempts attempt(s) (HTTP $http_code)."
+                  else
+                    last_error="$last_error; Model '$MODEL' failed after $max_attempts attempt(s) (HTTP $http_code)."
+                  fi
+                  ;;
+              esac
             fi
           done
 
