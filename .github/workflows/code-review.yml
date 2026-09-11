@@ -9,6 +9,18 @@ permissions:
   pull-requests: write
 
 jobs:
+  # Lane notes (2026-09-11): zen lanes removed — the OPENCODE_API_KEY workspace
+  # has no payment method (paid models 401) and "-free" models are now app-only
+  # ("free tier can only be used in OpenCode"). gemini-flash-latest chosen per
+  # owner; if GH-runner IPs hit 503 capacity gating (seen with 3.8-flash on
+  # lucerneclinic.test), fall back to gemini-3.5-flash (CI-proven there).
+  gemini-review:
+    uses: ./.github/workflows/gemini-reviewer.yml
+    with:
+      provider: gemini
+      model: gemini-flash-latest
+    secrets:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   openrouter-review:
     uses: ./.github/workflows/gemini-reviewer.yml
     with:
@@ -24,18 +36,3 @@ jobs:
       model: z-ai/glm-5.2
     secrets:
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-  zen-muse-review:
-    uses: ./.github/workflows/gemini-reviewer.yml
-    with:
-      provider: zen
-      model: muse-spark-1.2-contributor-free
-      models: muse-spark-1.2-contributor-free mimo-v2.5-free
-    secrets:
-      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-  zen-mimo-review:
-    uses: ./.github/workflows/gemini-reviewer.yml
-    with:
-      provider: zen
-      model: mimo-v2.5-free
-    secrets:
-      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
