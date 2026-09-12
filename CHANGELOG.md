@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.15.0] - 2026-09-12
 
 ### Changed
+- **Gemini lane: newest-alias chain per owner directive.** `models: gemini-flash-latest gemini-3.8-flash gemini-3.7-flash gemini-3.5-flash` — all verified 200 on the official Generative Language API (2026-09-12). There is no `gemini-latest` alias (404). Known caveat: GH-runner IPs intermittently get 503 capacity-gating on the newest models; the chain absorbs it (2 attempts per model, then next). Retry caps from the same directive: gemini and NIM get 2 attempts (1 retry); zen/openai/openrouter keep 4.
+- **`models` fallback list now documented as working for gemini too** (the loop was always generic — the docs claim was stale), and the PR-comment heading now names the winning model for every provider, gemini included.
 - **NIM lane: `z-ai/glm-5.2` → `z-ai/glm-5.3-flash`.** 5.2 went 410 Gone upstream (2026-09-01, empty body); 5.3-flash is the only GLM left in the NIM catalog and answers HTTP 200 with the **same** `chat_template_kwargs` schema (~24s with thinking, direct probe 2026-09-12).
 - **NIM fallback: `deepseek-ai/deepseek-v4-flash-0731`.** The old `deepseek-v4-{pro,flash}` IDs went 410 EOL on 2026-08-07; the dated rebuild `-0731` verifies 200 with `chat_template_kwargs.thinking:true` (0.6s, `reasoning_content` in response — first hits can cold-start slow). `deepseek-v4-pro-0813` hangs on every param combo from non-CI IPs — excluded pending a CI-proven run.
 - **Muse lane reasoning raised to `xhigh`.** Verified 200 on muse-spark 1.2 (~18s) and 1.3 (2026-09-12); `"max"` returns 400 `invalid_request_error` (unsupported per opencode's registry: `thinkingLevelMap.max = null`).

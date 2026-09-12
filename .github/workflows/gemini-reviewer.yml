@@ -17,7 +17,7 @@ on:
         type: string
         default: "gemini-3.5-flash"
       models:
-        description: "Space- or comma-separated fallback list of models for provider 'openai'/'openrouter'/'nim'/'zen'. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/410/422), hits a free-tier cap, or all retries fail. If empty, only 'model' is used."
+        description: "Space- or comma-separated fallback list of models for any provider. Tried in order; the next model is used if one is removed/deprecated (HTTP 400/404/410/422), hits a free-tier cap, or all retries fail. If empty, only 'model' is used."
         type: string
         default: ""
       openai_endpoint:
@@ -533,11 +533,10 @@ jobs:
             exit 0
           fi
 
-          if [ "$PROVIDER" = "openai" ] || [ "$PROVIDER" = "openrouter" ] || [ "$PROVIDER" = "nim" ] || [ "$PROVIDER" = "zen" ]; then
-            { printf '## %s Code Review (%s)\n\n' "$LABEL" "$used_model"; printf '%s\n' "$review"; } > review_report.md
-          else
-            { printf '## %s Code Review\n\n' "$LABEL"; printf '%s\n' "$review"; } > review_report.md
-          fi
+          # Heading always names the model that actually reviewed — with
+          # fallback chains (gemini-flash-latest -> 3.8 -> 3.7 -> 3.5) the
+          # winner is otherwise invisible in the PR comment.
+          { printf '## %s Code Review (%s)\n\n' "$LABEL" "$used_model"; printf '%s\n' "$review"; } > review_report.md
           echo "status=ok" >> $GITHUB_OUTPUT
 
       - name: Build skip comment
