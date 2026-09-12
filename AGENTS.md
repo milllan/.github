@@ -96,6 +96,7 @@ NIM models do **not** share a single "thinking" flag — each model picks its ow
 | Model | Schema | Notes |
 |-------|--------|-------|
 | `z-ai/glm-5.3-flash` | `chat_template_kwargs: { enable_thinking: true, clear_thinking: true }` | Verified 2026-09-12 (~24s with thinking). Only GLM left in the NIM catalog — `z-ai/glm-5.2` went 410 Gone upstream 2026-09-01. Same schema as 5.2. |
+| `deepseek-ai/deepseek-v4-flash-0731` | `chat_template_kwargs: { thinking: true }` | Verified 2026-09-12 (0.6s; returns `reasoning_content` alongside `content`). First hits can cold-start slow — don't mistake a slow first request for a hang. |
 | `minimaxai/minimax-m3` | `chat_template_kwargs: { thinking_mode: "enabled" }` | Documented at [docs.api.nvidia.com/nim/reference/minimaxai-minimax-m3-infer](https://docs.api.nvidia.com/nim/reference/minimaxai-minimax-m3-infer). Plain body also works (adaptive mode). |
 | `thinkingmachines/inkling` | top-level `reasoning_effort: "high"` | OpenAI o1-style. Plain body also works. |
 | `deepseek-ai/deepseek-v4-pro` | `chat_template_kwargs: { thinking: true }` | Plain body also works. |
@@ -108,6 +109,7 @@ NIM models do **not** share a single "thinking" flag — each model picks its ow
 |-------|---------|-------|
 | `moonshotai/kimi-k2.6` | HTTP 404 `Function '...': Not found for account '9WY0...'` | Account entitlement — this account doesn't have kimi access. Not fixable without changing the NVIDIA account tier. |
 | `z-ai/glm-5.2` | HTTP 410 Gone (empty body) | Removed from NIM upstream 2026-09-01. Successor: `z-ai/glm-5.3-flash`. |
+| `deepseek-ai/deepseek-v4-pro`, `deepseek-v4-flash` | HTTP 410 "reached its end of life on 2026-08-07" | Dated rebuilds exist: `deepseek-v4-flash-0731` (works, see above), `deepseek-v4-pro-0813` (hangs on every param combo from non-CI IPs — excluded pending a CI-proven run). |
 
 To add a new NIM model:
 1. **Probe it directly first** (not just CI — CI verification is unreliable because GitHub runners hit different NIM backends). Save a key to `~/.config/shell/.nimrc`, then:
