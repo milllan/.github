@@ -22,9 +22,13 @@ jobs:
   # excluded. zen-muse re-enabled with muse-spark-1.3-contributor-free
   # (xhigh reasoning; verified 200 via /zen/v1/responses; the 2026-09-11
   # "free models are app-only" note did NOT hold on re-probes with client
-  # headers + a valid key). 1.2 stays as in-family fallback, then mimo.
-  # openrouter-review: still disabled — tencent/hy3:free 404s for free and
-  # all fallbacks are paid. Re-enable with a working free model.
+  # headers + a valid key). 1.2 stays as in-family fallback.
+  # zen lanes per owner directive (2026-09-12): muse and mimo are INDEPENDENT
+  # lanes, not fallbacks of each other — each gets its own PR comment. The
+  # muse fallback chain is in-family only (1.3 -> 1.2). Free-tier quota is
+  # per model, so a quota'd lane posts its :warning: without starving the
+  # other. openrouter-review: still disabled — tencent/hy3:free 404s for
+  # free and all fallbacks are paid. Re-enable with a working free model.
   gemini-review:
     uses: ./.github/workflows/gemini-reviewer.yml
     with:
@@ -46,6 +50,13 @@ jobs:
     with:
       provider: zen
       model: muse-spark-1.3-contributor-free
-      models: muse-spark-1.3-contributor-free muse-spark-1.2-contributor-free mimo-v2.5-free
+      models: muse-spark-1.3-contributor-free muse-spark-1.2-contributor-free
+    secrets:
+      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+  zen-mimo-review:
+    uses: ./.github/workflows/gemini-reviewer.yml
+    with:
+      provider: zen
+      model: mimo-v2.5-free
     secrets:
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
