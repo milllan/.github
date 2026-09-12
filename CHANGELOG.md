@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-09-12
+
+### Changed
+- **NIM lane: `z-ai/glm-5.2` → `z-ai/glm-5.3-flash`.** 5.2 went 410 Gone upstream (2026-09-01, empty body); 5.3-flash is the only GLM left in the NIM catalog and answers HTTP 200 with the **same** `chat_template_kwargs` schema (~24s with thinking, direct probe 2026-09-12). Added to the NIM per-model dispatch pattern; NIM keeps `max_attempts=2` (thinking budget unchanged).
+- **Zen muse lane: `muse-spark-1.2-contributor-free` → `muse-spark-1.3-contributor-free`.** Verified 2026-09-12 via `/zen/v1/responses` (2.9s trivial probe; 11s review-quality probe at `reasoning.effort: high`, 4/4 valid findings on a toy diff — on par with 1.2). `muse-spark*` Responses-API pattern covers it with no code change. Fallback list: 1.2-contributor-free, then `mimo-v2.5-free`. Paid `muse-spark-1.2-contributor` is not an option with a free key (`CreditsError` 401 on `/zen/go/v1`).
+- **zen lanes re-enabled in this repo's caller** (previously dropped 2026-09-11 as "free models app-only" — that did not hold on 2026-09-12 re-probes with client headers + a valid key: both muse variants answered 200). Caller lineup now: gemini-3.5-flash, z-ai/glm-5.3-flash (NIM), muse-spark-1.3-contributor-free (zen).
+
 ## [1.14.0] - 2026-09-01
 
 ### Added

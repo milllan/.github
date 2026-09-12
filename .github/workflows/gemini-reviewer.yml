@@ -280,7 +280,8 @@ jobs:
                 # different NIM backends with different model availability.
                 #
                 # Verified schemas (all return HTTP 200 with thinking ON):
-                #   z-ai/glm-5.2                  -> chat_template_kwargs.enable_thinking
+                #   z-ai/glm-5.3-flash            -> chat_template_kwargs.enable_thinking (verified 2026-09-12, 24s;
+                #                                    same schema as 5.2 — z-ai/glm-5.2 went 410 Gone upstream 2026-09-01)
                 #   minimaxai/minimax-m3          -> chat_template_kwargs.thinking_mode:"enabled"
                 #   thinkingmachines/inkling      -> top-level reasoning_effort:"high"
                 #   deepseek-ai/deepseek-v4-pro   -> chat_template_kwargs.thinking:true
@@ -291,7 +292,7 @@ jobs:
                 #   moonshotai/kimi-k2.6          -> HTTP 404 "Not found for account" (entitlement, not param)
                 #
                 case "$MODEL" in
-                  z-ai/glm-5.2)
+                  z-ai/glm-5.2|z-ai/glm-5.3-flash)
                     nim_extras='{"chat_template_kwargs":{"enable_thinking":true,"clear_thinking":true}}'
                     ;;
                   minimaxai/minimax-m3)
