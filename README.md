@@ -40,7 +40,7 @@ jobs:
     secrets: { NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }} }
   zen-muse-review:
     uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
-    with: { provider: zen, model: muse-spark-1.2-contributor-free }
+    with: { provider: zen, model: muse-spark-1.3-contributor-free }
     secrets: { OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }} }
   zen-mimo-review:
     uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
@@ -54,7 +54,7 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `provider` | `gemini` | `gemini`, `openai` (OpenAI-compatible endpoint), `openrouter` (OpenRouter, OpenAI-compatible), `nim` (NVIDIA NIM, OpenAI-compatible, e.g. `z-ai/glm-5.2`), or `zen` (OpenCode Zen gateway, e.g. `muse-spark-1.2-contributor-free`, `mimo-v2.5-free`). |
+| `provider` | `gemini` | `gemini`, `openai` (OpenAI-compatible endpoint), `openrouter` (OpenRouter, OpenAI-compatible), `nim` (NVIDIA NIM, OpenAI-compatible, e.g. `z-ai/glm-5.3-flash`), or `zen` (OpenCode Zen gateway, e.g. `muse-spark-1.3-contributor-free`, `mimo-v2.5-free`). |
 | `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`, `tencent/hy3:free`, `z-ai/glm-5.2`, `muse-spark-1.2-contributor-free`). For `openai`/`openrouter`/`nim`/`zen`, this is used **only when `models` is empty** — if `models` is set, it fully overrides `model`. |
 | `models` | `""` | Space- or comma-separated fallback list for `openai`/`openrouter`/`nim`/`zen`. Tried in order; the next is used if one is removed/deprecated (HTTP 400/404/410/422), hits a free-tier cap (429 `FreeUsageLimitError`), or all retries fail. If it is **non-empty after splitting**, it fully replaces `model` as the ordered list to try; if it parses to nothing (e.g. only separators), `model` is used instead. Empty = only `model` is used. Ignored for `gemini`. |
 | `openai_endpoint` | `https://api.z.ai/api/coding/paas/v4/chat/completions` | OpenAI-compatible endpoint for `openai`. Defaults to Z.ai's **Coding Plan** (subscription). Use `https://api.z.ai/api/paas/v4/chat/completions` for pay-per-token API credits. |
@@ -85,7 +85,7 @@ The `GITHUB_TOKEN` is provided automatically by Actions — don't add it as a se
 - **Reasoning-model fallback**: OpenAI-compatible providers fall back to `.choices[0].message.reasoning` when `content` is empty (e.g. `mimo-v2.5-free`), so reasoning-only models still produce a review comment.
 - **Zen muse-spark models use the Responses API** (per-model, like NIM thinking modes): `muse-spark*` models do not serve `/chat/completions` (instant HTTP 500) — the workflow posts them to `/zen/v1/responses` instead and extracts text from `.output[]`. Verified by direct probe 2026-09-01; see [AGENTS.md](./AGENTS.md).
 - **Zen requests identify themselves**: `User-Agent: milllan-github-reviewer/1.0` + a per-run `x-opencode-session` header. Required: OpenCode returns `HTTP 400 MissingSessionID` to headerless requests from datacenter IPs (GitHub runners — confirmed 2026-09-08); residential IPs may still pass without them.
-- **NIM thinking modes** (per-model, not a global flag): each model has its own thinking param schema, verified by direct probes — `z-ai/glm-5.2` uses `chat_template_kwargs.enable_thinking`, `minimaxai/minimax-m3` uses `chat_template_kwargs.thinking_mode: "enabled"`, `thinkingmachines/inkling` uses top-level `reasoning_effort: "high"`, `deepseek-ai/deepseek-v4-{pro,flash}` and `stepfun-ai/step-3.7-flash` use `chat_template_kwargs.thinking: true` (step-3.7-flash *requires* it). See [AGENTS.md](./AGENTS.md#nim-thinking-schemas-per-model) for the full verified table and how to add a new model.
+- **NIM thinking modes** (per-model, not a global flag): each model has its own thinking param schema, verified by direct probes — `z-ai/glm-5.3-flash` uses `chat_template_kwargs.enable_thinking` (same schema the removed `z-ai/glm-5.2` used), `minimaxai/minimax-m3` uses `chat_template_kwargs.thinking_mode: "enabled"`, `thinkingmachines/inkling` uses top-level `reasoning_effort: "high"`, `deepseek-ai/deepseek-v4-{pro,flash}` and `stepfun-ai/step-3.7-flash` use `chat_template_kwargs.thinking: true` (step-3.7-flash *requires* it). See [AGENTS.md](./AGENTS.md#nim-thinking-schemas-per-model) for the full verified table and how to add a new model.
 - **Cost guard**: diffs over `max_diff_chars` are skipped with a visible comment (not a silent no-op).
 - **Retries** transient API errors (429/502/503/504) with backoff before giving up. Removed models (400/404/410/422) and exhausted free-tier caps (429 `FreeUsageLimitError`) skip straight to the next model in `models` instead of retrying.
 - **Graceful degradation**: if a provider key is missing or its API errors, that job posts an error comment; the other reviewer still runs.
