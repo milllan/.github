@@ -9,32 +9,39 @@ permissions:
   pull-requests: write
 
 jobs:
-  openrouter-review:
+  # Lane notes (2026-09-12): gemini-3.5-flash stays (CI-proven on
+  # lucerneclinic.test). NIM re-enabled with z-ai/glm-5.3-flash — the only GLM
+  # left in the NIM catalog after z-ai/glm-5.2 went 410 Gone (2026-09-01);
+  # verified HTTP 200 2026-09-12 with the same chat_template_kwargs schema
+  # (~24s with thinking on). zen-muse re-enabled with
+  # muse-spark-1.3-contributor-free — verified 200 via /zen/v1/responses
+  # 2026-09-12 (2.9s probe; review-quality probe on a toy diff: 4/4 valid
+  # findings, 11s @ reasoning high). The 2026-09-11 "free models are app-only"
+  # note did NOT hold on 2026-09-12 re-probes: both muse 1.3 and 1.2
+  # contributor-free answered with client headers + a valid key. 1.2 stays as
+  # the in-family fallback, then mimo-v2.5-free (quota fluctuates).
+  # openrouter-review: still disabled — tencent/hy3:free 404s for free and all
+  # fallbacks are paid. Re-enable with a working free model.
+  gemini-review:
     uses: ./.github/workflows/gemini-reviewer.yml
     with:
-      provider: openrouter
-      model: tencent/hy3:free
-      models: tencent/hy3:free anthropic/claude-3.5-haiku google/gemini-flash-1.5
+      provider: gemini
+      model: gemini-3.5-flash
     secrets:
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   nim-review:
     uses: ./.github/workflows/gemini-reviewer.yml
     with:
       provider: nim
-      model: z-ai/glm-5.2
+      model: z-ai/glm-5.3-flash
+      models: z-ai/glm-5.3-flash deepseek-ai/deepseek-v4-flash-0731
     secrets:
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-  zen-deepseek-review:
+  zen-muse-review:
     uses: ./.github/workflows/gemini-reviewer.yml
     with:
       provider: zen
-      model: deepseek-v4-flash-free
-    secrets:
-      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-  zen-mimo-review:
-    uses: ./.github/workflows/gemini-reviewer.yml
-    with:
-      provider: zen
-      model: mimo-v2.5-free
+      model: muse-spark-1.3-contributor-free
+      models: muse-spark-1.3-contributor-free muse-spark-1.2-contributor-free mimo-v2.5-free
     secrets:
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}

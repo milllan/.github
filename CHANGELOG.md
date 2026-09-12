@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-09-12
+
+### Changed
+- **NIM lane: `z-ai/glm-5.2` → `z-ai/glm-5.3-flash`.** 5.2 went 410 Gone upstream (2026-09-01, empty body); 5.3-flash is the only GLM left in the NIM catalog and answers HTTP 200 with the **same** `chat_template_kwargs` schema (~24s with thinking, direct probe 2026-09-12).
+- **NIM fallback: `deepseek-ai/deepseek-v4-flash-0731`.** The old `deepseek-v4-{pro,flash}` IDs went 410 EOL on 2026-08-07; the dated rebuild `-0731` verifies 200 with `chat_template_kwargs.thinking:true` (0.6s, `reasoning_content` in response — first hits can cold-start slow). `deepseek-v4-pro-0813` hangs on every param combo from non-CI IPs — excluded pending a CI-proven run.
+- **Muse lane reasoning raised to `xhigh`.** Verified 200 on muse-spark 1.2 (~18s) and 1.3 (2026-09-12); `"max"` returns 400 `invalid_request_error` (unsupported per opencode's registry: `thinkingLevelMap.max = null`).
+- **Provider-aware attempt caps, owner directive 2026-09-12:** `gemini` joins `nim` at `max_attempts=2` (1 retry) — the less-reliable lanes. Zen (priority lane), openai and openrouter keep 4.
+- **Zen muse lane: `muse-spark-1.2-contributor-free` → `muse-spark-1.3-contributor-free`.** Verified 2026-09-12 via `/zen/v1/responses` (2.9s trivial probe; 11s review-quality probe at reasoning high — 4/4 valid findings on a toy diff, on par with 1.2). `muse-spark*` Responses-API pattern covers it with no code change. Fallback list: 1.2-contributor-free, then `mimo-v2.5-free`. Paid `muse-spark-1.2-contributor` is not an option with a free key (`CreditsError` 401 on `/zen/go/v1`).
+- **zen lanes re-enabled in this repo's caller** (previously dropped 2026-09-11 as "free models app-only" — that did not hold on 2026-09-12 re-probes with client headers + a valid key: both muse variants answered 200). Caller lineup now: gemini-3.5-flash, z-ai/glm-5.3-flash + deepseek-v4-flash-0731 (NIM), muse-spark-1.3-contributor-free (zen).
+
+## [1.14.0] - 2026-09-01
+
+### Added
+- **Zen muse-spark support (Responses API).** `provider: zen, model: muse-spark-1.2-contributor-free` now works as the zen reviewer, replacing `deepseek-v4-flash-free` (down upstream since 2026-09-01: HTTP 400 "Model is unavailable"). muse-spark models do not serve `/chat/completions` — direct probes returned instant HTTP 500 (6/6, streaming or not) — so the zen branch now dispatches per model (like the NIM thinking schemas): `muse-spark*` posts to the new `zen_responses_endpoint` input (default `https://opencode.ai/zen/v1/responses`, OpenAI Responses API shape) with `reasoning.effort: "high"`, and extracts text from `.output[]` message items. Verified by direct probes (200 @ high ~15s / xhigh ~18s) and by executing the extracted `Run Review` script locally end-to-end: muse direct (status=ok, 16s), fallback list `deepseek-v4-flash-free muse-spark-1.2-contributor-free` skipping the dead deepseek (status=ok), and the `openai`/GLM chat-completions regression path (status=ok).
+- **Zen client-identification headers.** Zen requests now send `User-Agent: milllan-github-reviewer/1.0` and a per-run `x-opencode-session` UUID. OpenCode enforces these on the `/zen/go` gateway for external tools (2026-09), and on the free `/zen/v1` gateway for datacenter IPs: a VPS probe got `HTTP 400 MissingSessionID` without the headers and HTTP 200 with them (2026-09-08), matching the muse-review CI failures on GitHub runners. Residential IPs still pass without them.
+- **Skip-to-next-model for removed models and free-tier caps.** HTTP 410 joins 400/404/422 as "unavailable" (NIM `z-ai/glm-5.2` began 410ing 2026-09-01 with an empty body); 429s carrying error type `FreeUsageLimitError` (OpenCode free-tier cap) skip to the next model instead of burning all retry attempts. The "All models failed" comment now lists every skipped model's real error instead of appending a misleading "failed after N attempt(s)" tail (a skipped model makes 1 attempt, not N).
+
+### Changed
+- **This repo's own caller** (`.github/workflows/code-review.yml`) swaps `zen-deepseek-review` for `zen-muse-review` with fallback `models: muse-spark-1.2-contributor-free mimo-v2.5-free` (mixed API families, verified).
+
 ## [1.13.0] - 2026-08-15
 
 ### Changed

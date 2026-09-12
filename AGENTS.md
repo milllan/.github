@@ -16,7 +16,7 @@ Current pinned HEAD: see [`commits/main`](https://github.com/milllan/.github/com
    - `ZAI_API_KEY` if using the GLM job (get from https://z.ai/apikey) — forwarded as `OPENAI_API_KEY` in the caller
    - `OPENROUTER_API_KEY` if using the OpenRouter job (get from https://openrouter.ai/keys) — forwarded as `OPENROUTER_API_KEY` in the caller
    - `NVIDIA_API_KEY` if using the NVIDIA NIM job (get from https://build.nvidia.com/settings/api-keys) — forwarded as `NVIDIA_API_KEY` in the caller
-   - `OPENCODE_API_KEY` if using the OpenCode Zen job (get from https://opencode.ai/auth) — forwarded as `OPENCODE_API_KEY` in the caller. Free models (e.g. `deepseek-v4-flash-free`, `mimo-v2.5-free`) need no billing.
+   - `OPENCODE_API_KEY` if using the OpenCode Zen job (get from https://opencode.ai/auth) — forwarded as `OPENCODE_API_KEY` in the caller. Free models (e.g. `muse-spark-1.3-contributor-free`, `mimo-v2.5-free`) need no billing.
 3. The repo's default branch must allow Actions to post comments (`pull-requests: write` is set in the caller).
 4. The reusable workflow's repo (`milllan/.github`) must be **public** — GitHub requires this for reusable workflows called across repos.
 
@@ -58,11 +58,11 @@ jobs:
     secrets: { OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }} }
   nim-review:
     uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
-    with: { provider: nim, model: z-ai/glm-5.2 }
+    with: { provider: nim, model: z-ai/glm-5.3-flash }
     secrets: { NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }} }
-  zen-deepseek-review:
+  zen-muse-review:
     uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
-    with: { provider: zen, model: deepseek-v4-flash-free }
+    with: { provider: zen, model: muse-spark-1.3-contributor-free }
     secrets: { OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }} }
   zen-mimo-review:
     uses: milllan/.github/workflows/gemini-reviewer.yml@<SHA>
@@ -95,18 +95,21 @@ NIM models do **not** share a single "thinking" flag — each model picks its ow
 
 | Model | Schema | Notes |
 |-------|--------|-------|
-| `z-ai/glm-5.2` | `chat_template_kwargs: { enable_thinking: true, clear_thinking: true }` | `clear_thinking: true` strips the reasoning trace so only the final review lands in the PR comment. **Hangs intermittently from non-CI IPs** — see gotchas below. |
+| `z-ai/glm-5.3-flash` | `chat_template_kwargs: { enable_thinking: true, clear_thinking: true }` | Verified 2026-09-12 (~24s with thinking). Only GLM left in the NIM catalog — `z-ai/glm-5.2` went 410 Gone upstream 2026-09-01. Same schema as 5.2. |
+| `deepseek-ai/deepseek-v4-flash-0731` | `chat_template_kwargs: { thinking: true }` | Verified 2026-09-12 (0.6s; returns `reasoning_content` alongside `content`). First hits can cold-start slow — don't mistake a slow first request for a hang. |
 | `minimaxai/minimax-m3` | `chat_template_kwargs: { thinking_mode: "enabled" }` | Documented at [docs.api.nvidia.com/nim/reference/minimaxai-minimax-m3-infer](https://docs.api.nvidia.com/nim/reference/minimaxai-minimax-m3-infer). Plain body also works (adaptive mode). |
 | `thinkingmachines/inkling` | top-level `reasoning_effort: "high"` | OpenAI o1-style. Plain body also works. |
 | `deepseek-ai/deepseek-v4-pro` | `chat_template_kwargs: { thinking: true }` | Plain body also works. |
 | `deepseek-ai/deepseek-v4-flash` | `chat_template_kwargs: { thinking: true }` | Plain body also works. |
 | `stepfun-ai/step-3.7-flash` | `chat_template_kwargs: { thinking: true }` | **Required** — plain body hangs. The only model in the lineup that REQUIRES a thinking flag to respond at all. |
 
-**Verified broken (as of 2026-07-21):**
+**Verified broken (as of 2026-09-12):**
 
 | Model | Failure | Cause |
 |-------|---------|-------|
 | `moonshotai/kimi-k2.6` | HTTP 404 `Function '...': Not found for account '9WY0...'` | Account entitlement — this account doesn't have kimi access. Not fixable without changing the NVIDIA account tier. |
+| `z-ai/glm-5.2` | HTTP 410 Gone (empty body) | Removed from NIM upstream 2026-09-01. Successor: `z-ai/glm-5.3-flash`. |
+| `deepseek-ai/deepseek-v4-pro`, `deepseek-v4-flash` | HTTP 410 "reached its end of life on 2026-08-07" | Dated rebuilds exist: `deepseek-v4-flash-0731` (works, see above), `deepseek-v4-pro-0813` (hangs on every param combo from non-CI IPs — excluded pending a CI-proven run). |
 
 To add a new NIM model:
 1. **Probe it directly first** (not just CI — CI verification is unreliable because GitHub runners hit different NIM backends). Save a key to `~/.config/shell/.nimrc`, then:
@@ -121,9 +124,26 @@ To add a new NIM model:
 3. Document the result in the tables above.
 
 Don't blanket-apply any single flag — that was the v1.7.1 bug (wrong key name for GLM, no-op for everything else).
-- **zen**: `{zen_endpoint}` (default `https://opencode.ai/zen/v1/chat/completions`, OpenCode Zen gateway) with `Authorization: Bearer ${OPENCODE_API_KEY}`, same response shape as openai. Free models include `deepseek-v4-flash-free` and `mimo-v2.5-free`. Reasoning-only models (e.g. `mimo-v2.5-free`) return `content:null`; the workflow falls back to `.choices[0].message.reasoning` so they still post a review.
+- **zen**: `{zen_endpoint}` (default `https://opencode.ai/zen/v1/chat/completions`, OpenCode Zen gateway) with `Authorization: Bearer ${OPENCODE_API_KEY}`, same response shape as openai. Free models include `muse-spark-1.2-contributor-free` and `mimo-v2.5-free`. Reasoning-only models (e.g. `mimo-v2.5-free`) return `content:null`; the workflow falls back to `.choices[0].message.reasoning` so they still post a review.
 
-The OpenAI-compatible branch (`openai`/`openrouter`/`nim`/`zen`) supports a **model fallback list**: the `models` input (space/comma-separated) is tried in order; if a model returns HTTP 400/404/422 (removed/deprecated) the next is used. When `models` is set it fully overrides the single `model` input (which is only used when `models` is empty); `models` is ignored for `gemini`. Permanent 401/403 or balance/quota 429 fail fast (shared key). The comment heading names the model that actually reviewed, e.g. `## OpenRouter Code Review (tencent/hy3:free)`, `## NVIDIA NIM Code Review (z-ai/glm-5.2)`, or `## OpenCode Zen Code Review (deepseek-v4-flash-free)`.
+### Zen muse-spark models are Responses-API only (per-model)
+
+Like the NIM thinking schemas, the zen provider dispatches per model: **`muse-spark*` models do not serve chat-completions**. Verified by direct curl probes against `opencode.ai/zen` with a real key (2026-09-01):
+
+- `muse-spark-1.2-contributor-free` on `/zen/v1/chat/completions` → instant HTTP 500 `Internal server error` (6/6 attempts: plain body, with `max_tokens`, with `stream:true`). Not rate limiting — the gateway returns a structured `FreeUsageLimitError` 429 when quota is the issue.
+- `muse-spark-1.2-contributor-free` on `/zen/v1/responses` (OpenAI **Responses API** shape: `input[]` with role/content parts, text under `.output[]` message items) → HTTP 200. `reasoning.effort` `high` (~15s) and `xhigh` (~18s) both verified. The workflow sends `high`.
+- `muse-spark-1.3-contributor-free` verified 2026-09-12: `/zen/v1/responses` → 200 (2.9s trivial probe; 11s review-quality probe at `reasoning.effort: high` — 4/4 valid findings on a toy diff, on par with 1.2). Now the default muse lane, with 1.2 as in-family fallback; the `muse-spark*` pattern covers both with no code change.
+- The model entry in opencode's own model registry declares `api: "openai-responses"` — the chat-completions 500 is a routing gap, not a transient outage.
+- Paid `muse-spark-1.2` / `muse-spark-1.3` (and `muse-spark-1.2-contributor` on the `/zen/go/v1` gateway) need a payment method (`CreditsError` 401) — not usable with a free key. The free tier is the `-contributor-free` variants only.
+- `deepseek-v4-flash-free` (the previous zen reviewer) went down upstream on 2026-09-01: HTTP 400 `Model is unavailable` — the fallback list or the muse swap covers it.
+
+To add another zen Responses-API model: add its name pattern to the two `muse-spark*` cases in the workflow's zen branches (`build_body()` and the curl endpoint switch + extraction), and probe `/zen/v1/responses` directly first — the `/v1/models` catalog listing is not proof a model serves a given API family.
+
+**Zen client-identification headers (updated 2026-09-08):** OpenCode requires external tools to send `x-opencode-session: <stable-id-per-conversation>` and an explicit `User-Agent` on the `/zen/go/v1` gateway (pi's `opencode-go` provider — enforced per opencode's announcement; see r/opencode "OpenCode Go is no longer general API access"). Enforcement on the free `/zen/v1` gateway is **IP-dependent**: residential IPs got identical responses with and without the headers (probe matrix 2026-09-08), but datacenter IPs get **HTTP 400 `MissingSessionID`** — confirmed from a VPS and inferred for GitHub runners, where the muse reviews were failing with exactly that signature until the headers shipped. The workflow sends `-A milllan-github-reviewer/1.0` and a per-run UUID session header on all zen requests. A 400 `MissingSessionID` on any zen call means headers were stripped en route (proxy, fork without the fix).
+
+**Zen free-tier caps:** the free models have tight per-model caps — `muse-spark-1.2-contributor-free` exhausted after ~10 requests in a session on 2026-09-08 (429 `FreeUsageLimitError` "Rate limit exceeded. Please try again later."). The workflow classifies that 429 type as skip-to-next-model (not retry, not fatal) so a `models` fallback list can land on a model with remaining headroom. Expect zen free reviewers to intermittently post `:warning: unavailable` comments on heavy days; that is the quota, not a bug.
+
+The OpenAI-compatible branch (`openai`/`openrouter`/`nim`/`zen`) supports a **model fallback list**: the `models` input (space/comma-separated) is tried in order; if a model returns HTTP 400/404/422 (removed/deprecated) the next is used. When `models` is set it fully overrides the single `model` input (which is only used when `models` is empty); `models` is ignored for `gemini`. Permanent 401/403 or balance/quota 429 fail fast (shared key). The comment heading names the model that actually reviewed, e.g. `## NVIDIA NIM Code Review (z-ai/glm-5.3-flash)`, or `## OpenCode Zen Code Review (muse-spark-1.3-contributor-free)`. The fallback list may mix API families — verified 2026-09-01: `models: deepseek-v4-flash-free muse-spark-1.2-contributor-free` skips the down deepseek (400) and reviews via muse (200).
 
 To add a provider whose API differs from both (e.g. direct Anthropic), add a new branch to the `case $PROVIDER` in the "Run Review" step and a new input default + secret. OpenAI-compatible providers (OpenRouter, NVIDIA NIM, OpenCode Zen, DeepSeek, Mistral, Groq) need no code change — just a different `*_endpoint` and key.
 
