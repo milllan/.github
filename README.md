@@ -54,7 +54,7 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `provider` | `gemini` | `gemini`, `openai` (OpenAI-compatible endpoint), `openrouter` (OpenRouter, OpenAI-compatible), `nim` (NVIDIA NIM, OpenAI-compatible, e.g. `z-ai/glm-5.3-flash`), or `zen` (OpenCode Zen gateway, e.g. `muse-spark-1.3-contributor-free`, `mimo-v2.5-free`). |
+| `provider` | `gemini` | `gemini`, `openai` (OpenAI-compatible endpoint), `openrouter` (OpenRouter, OpenAI-compatible), `nim` (NVIDIA NIM, OpenAI-compatible, e.g. `z-ai/glm-5.3-flash`), `zen` (OpenCode Zen gateway, e.g. `muse-spark-1.3-contributor-free`, `mimo-v2.5-free`), or `inferx` (InferX gateway, e.g. `deepseek-v4.1-flash`). |
 | `model` | `gemini-3.5-flash` | Model name for the chosen provider (e.g. `glm-5.2`, `tencent/hy3:free`, `z-ai/glm-5.2`, `muse-spark-1.2-contributor-free`). For `openai`/`openrouter`/`nim`/`zen`, this is used **only when `models` is empty** — if `models` is set, it fully overrides `model`. |
 | `models` | `""` | Space- or comma-separated fallback list for any provider (including `gemini`). Tried in order; the next is used if one is removed/deprecated (HTTP 400/404/410/422), hits a free-tier cap (429 `FreeUsageLimitError`), or all retries fail. If it is **non-empty after splitting**, it fully replaces `model` as the ordered list to try; if it parses to nothing (e.g. only separators), `model` is used instead. Empty = only `model` is used. |
 | `openai_endpoint` | `https://api.z.ai/api/coding/paas/v4/chat/completions` | OpenAI-compatible endpoint for `openai`. Defaults to Z.ai's **Coding Plan** (subscription). Use `https://api.z.ai/api/paas/v4/chat/completions` for pay-per-token API credits. |
@@ -62,6 +62,7 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 | `nim_endpoint` | `https://integrate.api.nvidia.com/v1/chat/completions` | Chat-completions endpoint for `nim` (NVIDIA NIM). Only override if you self-host or proxy NIM. |
 | `zen_endpoint` | `https://opencode.ai/zen/v1/chat/completions` | Chat-completions endpoint for `zen` (OpenCode Zen). Only override if you self-host or proxy Zen. |
 | `zen_responses_endpoint` | `https://opencode.ai/zen/v1/responses` | Responses-API endpoint for `zen`, used automatically for `muse-spark*` models (they do not serve chat-completions). Only override if you self-host or proxy Zen. |
+| `inferx_endpoint` | `https://model.inferx.net/endpoints/v1/chat/completions` | Chat-completions endpoint for `inferx` (InferX). Only override if you self-host or proxy InferX. |
 | `max_diff_chars` | `250000` | Skip review if the raw diff exceeds this. `0` disables the limit. |
 
 ## Secrets
@@ -73,6 +74,7 @@ Replace `<SHA>` with a pinned commit from [`milllan/.github/commits/main`](https
 | `OPENROUTER_API_KEY` | `provider=openrouter` | Create at https://openrouter.ai/keys |
 | `NVIDIA_API_KEY` | `provider=nim` | Create at https://build.nvidia.com/settings/api-keys |
 | `OPENCODE_API_KEY` | `provider=zen` | Create at https://opencode.ai/auth (OpenCode Zen). Free models need no billing. |
+| `INFERX_API_KEY` | `provider=inferx` | Create at https://model.inferx.net (InferX). |
 | `GITHUB_TOKEN` | always | Auto-provided; used to post the PR comment. |
 
 The `GITHUB_TOKEN` is provided automatically by Actions — don't add it as a secret.
