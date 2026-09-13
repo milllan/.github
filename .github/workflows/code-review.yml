@@ -27,7 +27,13 @@ jobs:
   # lanes, not fallbacks of each other — each gets its own PR comment. The
   # muse fallback chain is in-family only (1.3 -> 1.2). Free-tier quota is
   # per model, so a quota'd lane posts its :warning: without starving the
-  # other. openrouter-review: still disabled — tencent/hy3:free 404s for
+  # other. inferx-review (2026-09-12): primary deepseek-v4-flash-0731 —
+  # review-shaped probe 1.8s on the InferX gateway; v4.1-flash verified 200
+  # with 2/2 real Critical findings but needs 66s+ on toy diffs and BLEW the
+  # 15-min job ceiling on a real PR diff (cancelled), so it is last resort.
+  # glm-5.3-flash on InferX: 39s probe. Same builds as our NIM lane on
+  # independent infra; bad model -> 404 so the chain skips cleanly.
+  # openrouter-review: still disabled — tencent/hy3:free 404s for
   # free and all fallbacks are paid. Re-enable with a working free model.
   gemini-review:
     uses: ./.github/workflows/gemini-reviewer.yml
@@ -60,3 +66,11 @@ jobs:
       model: mimo-v2.5-free
     secrets:
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+  inferx-review:
+    uses: ./.github/workflows/gemini-reviewer.yml
+    with:
+      provider: inferx
+      model: deepseek-v4-flash-0731
+      models: deepseek-v4-flash-0731 glm-5.3-flash deepseek-v4.1-flash
+    secrets:
+      INFERX_API_KEY: ${{ secrets.INFERX_API_KEY }}

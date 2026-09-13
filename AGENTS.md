@@ -124,6 +124,7 @@ To add a new NIM model:
 3. Document the result in the tables above.
 
 Don't blanket-apply any single flag — that was the v1.7.1 bug (wrong key name for GLM, no-op for everything else).
+- **inferx**: `{inferx_endpoint}` (default `https://model.inferx.net/endpoints/v1/chat/completions`, InferX gateway) with `Authorization: Bearer ${INFERX_API_KEY}`, same response shape as openai. Verified 2026-09-12: `deepseek-v4.1-flash` 200 (3s trivial, ~66s review-shaped probe with solid findings; reasoning runs internally but only final text is returned); unknown model -> HTTP 404, which the fallback chain treats as skip-to-next-model. The gateway also serves `deepseek-v4-flash-0731` and `glm-5.3-flash` (same builds as NIM) plus Qwen/Devstral/gemma variants.
 - **zen**: `{zen_endpoint}` (default `https://opencode.ai/zen/v1/chat/completions`, OpenCode Zen gateway) with `Authorization: Bearer ${OPENCODE_API_KEY}`, same response shape as openai. Free models include `muse-spark-1.2-contributor-free` and `mimo-v2.5-free`. Reasoning-only models (e.g. `mimo-v2.5-free`) return `content:null`; the workflow falls back to `.choices[0].message.reasoning` so they still post a review.
 
 ### Zen muse-spark models are Responses-API only (per-model)
