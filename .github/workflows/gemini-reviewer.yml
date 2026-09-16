@@ -355,15 +355,12 @@ jobs:
           # Budget math: timeout-minutes: 15 = 900s job ceiling. NIM thinking
           # requests can take ~400s each, so only 2 attempts + backoff fit —
           # 4 would be ~31min and get hard-cancelled mid-attempt (verified on
-          # termly.io PR #3). Owner directive 2026-09-12: gemini and NIM are
-          # the less-reliable lanes — cap them at 2 attempts (1 retry); zen is
-          # the priority lane and, like openai/openrouter, responds in seconds,
-          # so it keeps 4 attempts.
+          # termly.io PR #3). Owner directive 2026-09-16: uniform retry policy
+          # — every model gets exactly 1 retry (2 attempts), then the fallback
+          # chain skips to the next model. A flapping model burns at most
+          # ~13.5min; the models list, not retries, is the reliability story.
           # See reviewer-scorecard.md #14 for the history.
-          case "$PROVIDER" in
-            nim|gemini) max_attempts=2 ;;
-            *)          max_attempts=4 ;;
-          esac
+          max_attempts=2
           used_model=""
           last_error=""
           for MODEL in "${MODEL_LIST[@]}"; do
