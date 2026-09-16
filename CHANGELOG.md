@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.16.0] - 2026-09-16
 
 ### Added
-- **New NIM lane: `z-ai/glm-5.3`** (the non-flash GLM; owner request). Verified 200 with the GLM thinking schema — but 81s on a trivial probe (flash: 24s), so `z-ai/glm-5.3-flash` rides as the in-lane fallback to hedge the 15-min ceiling. Its requested sibling `moonshotai/kimi-k3` was probed and **not wired**: it hangs (HTTP 000) on plain, `reasoning_effort:"max"`, and `"high"` bodies from both residential and datacenter IPs — the `deepseek-v4-pro-0813` hang class, not the kimi-k2.6 entitlement 404. Documented in the AGENTS.md broken table for re-probing later.
+- **`z-ai/glm-5.3` + `moonshotai/kimi-k3` probed on owner request; neither wired.** glm-5.3 verifies 200 by direct probe (GLM thinking schema, 81s trivial) but NIM returns HTTP 504 on real-diff requests from GH runners (2/2 attempts, flash fallback 504'd identically — PR #25); schema mapping stays in `build_body` for re-testing. kimi-k3 hangs (HTTP 000) on plain / `reasoning_effort:"max"` / `"high"` bodies from both residential and datacenter IPs — the `deepseek-v4-pro-0813` hang class, not kimi-k2.6's instant entitlement 404. Both documented in the AGENTS.md broken table.
 
 ### Changed
 - **Job ceiling raised 15min → 25min.** PR #25 CI hard-killed three thinking lanes at 900s mid-review on a 30-line diff (`z-ai/glm-5.3`, its flash fallback, and the gemini chain — all "exceeded the maximum execution time of 15m0s"). This repo is public, so Actions minutes are free; 25min gives a 400s-capped model 2 attempts plus chain headroom for 2 more models.

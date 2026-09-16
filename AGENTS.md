@@ -95,7 +95,6 @@ NIM models do **not** share a single "thinking" flag — each model picks its ow
 
 | Model | Schema | Notes |
 |-------|--------|-------|
-| `z-ai/glm-5.3` | `chat_template_kwargs: { enable_thinking: true, clear_thinking: true }` | Verified 2026-09-16 (81s trivial — a SLOW thinker; glm-5.3-flash needed 24s for the same probe). Pair it with `z-ai/glm-5.3-flash` as fallback so the lane survives the 15-min ceiling on large diffs. |
 | `z-ai/glm-5.3-flash` | `chat_template_kwargs: { enable_thinking: true, clear_thinking: true }` | Verified 2026-09-12 (~24s with thinking). Only GLM left in the NIM catalog — `z-ai/glm-5.2` went 410 Gone upstream 2026-09-01. Same schema as 5.2. |
 | `deepseek-ai/deepseek-v4-flash-0731` | `chat_template_kwargs: { thinking: true }` | Verified 2026-09-12 (0.6s; returns `reasoning_content` alongside `content`). First hits can cold-start slow — don't mistake a slow first request for a hang. |
 | `minimaxai/minimax-m3` | `chat_template_kwargs: { thinking_mode: "enabled" }` | Documented at [docs.api.nvidia.com/nim/reference/minimaxai-minimax-m3-infer](https://docs.api.nvidia.com/nim/reference/minimaxai-minimax-m3-infer). Plain body also works (adaptive mode). |
@@ -109,6 +108,7 @@ NIM models do **not** share a single "thinking" flag — each model picks its ow
 | Model | Failure | Cause |
 |-------|---------|-------|
 | `moonshotai/kimi-k2.6` | HTTP 404 `Function '...': Not found for account '9WY0...'` | Account entitlement — this account doesn't have kimi access. Not fixable without changing the NVIDIA account tier. |
+| `z-ai/glm-5.3` | HTTP 504 (NIM gateway timeout) on real-diff review requests from GH runners — 2/2 attempts, and `glm-5.3-flash` fallback 504'd identically (2026-09-16, PR #25). Direct probes 200 (81s trivial) — region/backend lottery. Schema mapping (`enable_thinking`) stays in build_body for re-testing. |
 | `moonshotai/kimi-k3` | Hangs (HTTP 000, 0 bytes) — plain body, `reasoning_effort:"max"`, and `"high"`, from residential AND datacenter IPs (2026-09-16) | Not entitlement (that 404s instantly like k2.6) — the same hang class as `deepseek-v4-pro-0813`. Do not wire; re-probe later. |
 | `z-ai/glm-5.2` | HTTP 410 Gone (empty body) | Removed from NIM upstream 2026-09-01. Successor: `z-ai/glm-5.3-flash`. |
 | `deepseek-ai/deepseek-v4-pro`, `deepseek-v4-flash` | HTTP 410 "reached its end of life on 2026-08-07" | Dated rebuilds exist: `deepseek-v4-flash-0731` (works, see above), `deepseek-v4-pro-0813` (hangs on every param combo from non-CI IPs — excluded pending a CI-proven run). |

@@ -27,13 +27,14 @@ jobs:
   # lanes, not fallbacks of each other — each gets its own PR comment. The
   # muse fallback chain is in-family only (1.3 -> 1.2). Free-tier quota is
   # per model, so a quota'd lane posts its :warning: without starving the
-  # other. nim-glm-review added 2026-09-16 (owner request): z-ai/glm-5.3
-  # (the non-flash GLM) verified 200 with the GLM thinking schema but SLOW —
-  # 81s on a trivial probe (flash: 24s), so glm-5.3-flash rides as the
-  # in-lane fallback for the 15-min ceiling. Requested sibling
-  # moonshotai/kimi-k3 NOT wired: hangs on plain/max/high bodies from both
-  # residential and datacenter IPs (all probes HTTP 000, 2026-09-16) — the
-  # deepseek-v4-pro-0813 failure class; would burn 800s and warn every PR.
+  # other. z-ai/glm-5.3 lane REMOVED 2026-09-16 after live CI: NIM returns
+  # HTTP 504 (gateway timeout) for it on real diffs from GH runners — both
+  # attempts, and glm-5.3-flash fallback 504'd the same way (flash only
+  # survives the other lane via its deepseek fallback). Direct probes from
+  # home/datacenter 200 fine (81s trivial) — the region/backend lottery.
+  # Requested sibling moonshotai/kimi-k3 NOT wired: hangs on plain/max/high
+  # bodies from both residential and datacenter IPs (all probes HTTP 000,
+  # 2026-09-16) — the deepseek-v4-pro-0813 failure class.
   # other. zen-ling + zen-nemotron added 2026-09-12 (owner request): both
   # probed 200 via chat-completions (ling 1.7s — also CI-proven on
   # lucerneclinic since 09-08; nemotron-3-ultra 1.1s, standard content
@@ -60,14 +61,6 @@ jobs:
       provider: nim
       model: z-ai/glm-5.3-flash
       models: z-ai/glm-5.3-flash deepseek-ai/deepseek-v4-flash-0731
-    secrets:
-      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-  nim-glm-review:
-    uses: ./.github/workflows/gemini-reviewer.yml
-    with:
-      provider: nim
-      model: z-ai/glm-5.3
-      models: z-ai/glm-5.3 z-ai/glm-5.3-flash
     secrets:
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
   zen-muse-review:
