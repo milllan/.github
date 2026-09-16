@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.16.0] - 2026-09-16
 
+### Added
+- **New NIM lane: `z-ai/glm-5.3`** (the non-flash GLM; owner request). Verified 200 with the GLM thinking schema — but 81s on a trivial probe (flash: 24s), so `z-ai/glm-5.3-flash` rides as the in-lane fallback to hedge the 15-min ceiling. Its requested sibling `moonshotai/kimi-k3` was probed and **not wired**: it hangs (HTTP 000) on plain, `reasoning_effort:"max"`, and `"high"` bodies from both residential and datacenter IPs — the `deepseek-v4-pro-0813` hang class, not the kimi-k2.6 entitlement 404. Documented in the AGENTS.md broken table for re-probing later.
+
 ### Changed
 - **Uniform retry policy (owner directive):** every model on every provider gets exactly 1 retry (2 attempts) before the fallback chain skips to the next model. Replaces the two-tier system (gemini/NIM at 2 attempts, zen/openai/openrouter/inferx at 4) — the tiers were historical: NIM was capped for the 15-min thinking budget (PR #3 incident), fast lanes kept 4 for transient 503 flaps (gemini-3.7, creative-escapes PR #11), then gemini joined NIM on 2026-09-12. With wide `models` chains now the norm, the chain absorbs flapping better than per-model retries, and a bad model burns at most ~13.5min of the 15-min job budget.
 

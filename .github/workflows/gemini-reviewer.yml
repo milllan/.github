@@ -295,6 +295,8 @@ jobs:
                 # different NIM backends with different model availability.
                 #
                 # Verified schemas (all return HTTP 200):
+                #   z-ai/glm-5.3                  -> chat_template_kwargs.enable_thinking (verified 2026-09-16, 81s
+                #                                    trivial — SLOW thinker; pair with glm-5.3-flash fallback)
                 #   z-ai/glm-5.3-flash            -> chat_template_kwargs.enable_thinking (verified 2026-09-12, 24s;
                 #                                    same schema as 5.2 — z-ai/glm-5.2 went 410 Gone upstream 2026-09-01)
                 #   minimaxai/minimax-m3          -> chat_template_kwargs.thinking_mode:"enabled"
@@ -305,11 +307,14 @@ jobs:
                 #
                 # Verified broken (as of 2026-09-12):
                 #   moonshotai/kimi-k2.6          -> HTTP 404 "Not found for account" (entitlement, not param)
+                #   moonshotai/kimi-k3            -> hangs (HTTP 000) on plain/max/high bodies from BOTH
+                #                                    residential and datacenter IPs (2026-09-16) — not entitlement
+                #                                    (no instant 404); do not wire
                 #   deepseek-ai/deepseek-v4-{pro,flash} -> 410 EOL 2026-08-07
                 #   deepseek-ai/deepseek-v4-pro-0813    -> hangs (HTTP 000) on every param combo from non-CI IPs
                 #
                 case "$MODEL" in
-                  z-ai/glm-5.3-flash)
+                  z-ai/glm-5.3|z-ai/glm-5.3-flash)
                     nim_extras='{"chat_template_kwargs":{"enable_thinking":true,"clear_thinking":true}}'
                     ;;
                   deepseek-ai/deepseek-v4-flash-0731|stepfun-ai/step-3.7-flash)
