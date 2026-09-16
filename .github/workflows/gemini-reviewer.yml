@@ -82,16 +82,17 @@ jobs:
     # an expression because timeout-minutes only accepts a literal number
     # (actions/runner#1555).
     #
-    # Budget math: 15min job = 900s ceiling. Per-request curl --max-time is
-    # 400s, so 2 thinking attempts + (10s+20s) backoff fit (830s). The inner
-    # retry loop is capped at max_attempts=2 accordingly — more would exceed
-    # the job budget and get hard-cancelled by GitHub Actions mid-attempt
-    # (verified on termly.io PR #3, 2026-07-21: 4 attempts × 400s = 31min got
-    # killed). Non-thinking providers (gemini/openai/openrouter/zen) easily
-    # fit 2 attempts. Tradeoff: a thinking review on the largest diffs may
-    # not finish in 400s — it'll retry once, then post an error comment.
-    # See reviewer-scorecard.md #14 for the history.
-    timeout-minutes: 15
+    # Budget math: 25min job = 1500s ceiling (raised from 15min on
+    # 2026-09-16: thinking lanes z-ai/glm-5.3 and the gemini fallback chain
+    # were getting timeout-killed at 900s mid-review on real diffs, and this
+    # repo is PUBLIC so Actions minutes cost nothing). Per-request curl
+    # --max-time is 400s; with the uniform 1-retry policy (2 attempts/model)
+    # a model burns at most 810s, leaving ~2 more models of chain headroom
+    # before the ceiling. The old 15min cap verified hard-kills: termly.io
+    # PR #3 (4 × 400s = 31min) and milllan/.github PR #25 (glm-5.3 + flash +
+    # gemini chain all "exceeded the maximum execution time of 15m0s" on a
+    # 30-line diff). See reviewer-scorecard.md #14 for the history.
+    timeout-minutes: 25
 
     steps:
       - name: Checkout Code
@@ -295,6 +296,8 @@ jobs:
                 # different NIM backends with different model availability.
                 #
                 # Verified schemas (all return HTTP 200):
+                #   z-ai/glm-5.3                  -> chat_template_kwargs.enable_thinking (verified 2026-09-16, 81s
+                #                                    trivial — SLOW thinker; pair with glm-5.3-flash fallback)
                 #   z-ai/glm-5.3-flash            -> chat_template_kwargs.enable_thinking (verified 2026-09-12, 24s;
                 #                                    same schema as 5.2 — z-ai/glm-5.2 went 410 Gone upstream 2026-09-01)
                 #   minimaxai/minimax-m3          -> chat_template_kwargs.thinking_mode:"enabled"
@@ -305,11 +308,14 @@ jobs:
                 #
                 # Verified broken (as of 2026-09-12):
                 #   moonshotai/kimi-k2.6          -> HTTP 404 "Not found for account" (entitlement, not param)
+                #   moonshotai/kimi-k3            -> hangs (HTTP 000) on plain/max/high bodies from BOTH
+                #                                    residential and datacenter IPs (2026-09-16) — not entitlement
+                #                                    (no instant 404); do not wire
                 #   deepseek-ai/deepseek-v4-{pro,flash} -> 410 EOL 2026-08-07
                 #   deepseek-ai/deepseek-v4-pro-0813    -> hangs (HTTP 000) on every param combo from non-CI IPs
                 #
                 case "$MODEL" in
-                  z-ai/glm-5.3-flash)
+                  z-ai/glm-5.3|z-ai/glm-5.3-flash)
                     nim_extras='{"chat_template_kwargs":{"enable_thinking":true,"clear_thinking":true}}'
                     ;;
                   deepseek-ai/deepseek-v4-flash-0731|stepfun-ai/step-3.7-flash)
@@ -352,13 +358,12 @@ jobs:
           #  - 400/404/410/422 (model removed/deprecated) -> skip to the next model.
           #  - 401/403 and permanent 429 (balance/quota/key) -> fail fast, since
           #    the key is shared and other models would fail identically.
-          # Budget math: timeout-minutes: 15 = 900s job ceiling. NIM thinking
-          # requests can take ~400s each, so only 2 attempts + backoff fit —
-          # 4 would be ~31min and get hard-cancelled mid-attempt (verified on
-          # termly.io PR #3). Owner directive 2026-09-16: uniform retry policy
-          # — every model gets exactly 1 retry (2 attempts), then the fallback
-          # chain skips to the next model. A flapping model burns at most
-          # ~13.5min; the models list, not retries, is the reliability story.
+          # Budget math: timeout-minutes: 25 = 1500s job ceiling (2026-09-16;
+          # was 15min). Per-request curl --max-time is 400s. Owner directive
+          # 2026-09-16: uniform retry policy — every model gets exactly 1
+          # retry (2 attempts, 10s backoff), then the fallback chain skips to
+          # the next model. A dead model burns at most ~13.5min; the models
+          # list, not retries, is the reliability story.
           # See reviewer-scorecard.md #14 for the history.
           max_attempts=2
           used_model=""

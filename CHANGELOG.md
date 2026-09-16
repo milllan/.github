@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.16.0] - 2026-09-16
 
+### Added
+- **`z-ai/glm-5.3` + `moonshotai/kimi-k3` probed on owner request; neither wired.** glm-5.3 verifies 200 by direct probe (GLM thinking schema, 81s trivial) but NIM returns HTTP 504 on real-diff requests from GH runners (2/2 attempts, flash fallback 504'd identically — PR #25); schema mapping stays in `build_body` for re-testing. kimi-k3 hangs (HTTP 000) on plain / `reasoning_effort:"max"` / `"high"` bodies from both residential and datacenter IPs — the `deepseek-v4-pro-0813` hang class, not kimi-k2.6's instant entitlement 404. Both documented in the AGENTS.md broken table.
+
 ### Changed
+- **Job ceiling raised 15min → 25min.** PR #25 CI hard-killed three thinking lanes at 900s mid-review on a 30-line diff (`z-ai/glm-5.3`, its flash fallback, and the gemini chain — all "exceeded the maximum execution time of 15m0s"). This repo is public, so Actions minutes are free; 25min gives a 400s-capped model 2 attempts plus chain headroom for 2 more models.
 - **Uniform retry policy (owner directive):** every model on every provider gets exactly 1 retry (2 attempts) before the fallback chain skips to the next model. Replaces the two-tier system (gemini/NIM at 2 attempts, zen/openai/openrouter/inferx at 4) — the tiers were historical: NIM was capped for the 15-min thinking budget (PR #3 incident), fast lanes kept 4 for transient 503 flaps (gemini-3.7, creative-escapes PR #11), then gemini joined NIM on 2026-09-12. With wide `models` chains now the norm, the chain absorbs flapping better than per-model retries, and a bad model burns at most ~13.5min of the 15-min job budget.
 
 ## [1.15.0] - 2026-09-12
