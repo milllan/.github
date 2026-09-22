@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] - 2026-09-22
+
+### Changed
+- **Zen lanes disabled: OpenCode free tier went app-only.** Every `-free` model (mimo 2.5/2.6, ling, nemotron, muse) now returns HTTP 403 `FreeTierError` "OpenCode's free tier can only be used from within OpenCode" from residential and datacenter IPs on both API shapes, while working normally inside the OpenCode app/CLI (verified with `opencode run -m opencode/mimo-v2.6-flash-free`). The policy flapped once before (enforced ~09-11, lifted by 09-12), so the four zen jobs are commented out in the caller with a re-probe recipe in AGENTS.md rather than deleted. Active reviewer lanes: gemini-flash-latest chain, NIM (glm-5.3-flash → deepseek-v4-flash-0731), InferX (deepseek-v4-flash-0731 → glm-5.3-flash → v4.1-flash).
+
 ## [1.16.0] - 2026-09-16
 
 ### Added
